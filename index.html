@@ -3,306 +3,200 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Workout Planner Web</title>
-  <!-- Bootstrap for quick styling -->
-  <link
-    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-    rel="stylesheet"
-  />
-  <!-- Chart.js for progress graphs -->
+  <title>Workout Planner – Claude API版</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
-    body { background: #f8f9fa; }
-    #plan-area pre { white-space: pre-wrap; }
+    .card-log { max-width: 600px; }
   </style>
 </head>
-<body>
+<body class="bg-light">
   <div class="container py-4">
-    <h1 class="mb-4">🏋️‍♀️ Workout Planner</h1>
+    <h1 class="mb-4">Workout Planner (Claude API)</h1>
 
-    <!-- 1. OpenAI API KEY -->
-    <div class="card mb-4">
-      <div class="card-header">OpenAI API キー設定</div>
-      <div class="card-body">
-        <div class="row g-2 align-items-center">
-          <div class="col-md-9">
-            <input
-              type="password"
-              id="apiKeyInput"
-              class="form-control"
-              placeholder="sk-..."
-            />
-          </div>
-          <div class="col-md-3 d-grid">
-            <button id="saveKeyBtn" class="btn btn-primary">
-              保存 / 更新
-            </button>
-          </div>
-        </div>
-        <small class="text-muted"
-          >キーはブラウザの <code>localStorage</code> にのみ保存され、サーバには送信されません。</small
-        >
-      </div>
+    <!-- API Key -->
+    <div class="mb-4">
+      <label for="apiKey" class="form-label">Claude API Key</label>
+      <input type="password" class="form-control" id="apiKey" placeholder="sk-ant-..." />
+      <button class="btn btn-primary mt-2" onclick="saveKey()">保存</button>
     </div>
 
-    <!-- 2. Profile & Plan Generation -->
-    <div class="card mb-4">
-      <div class="card-header">プロフィール & 初回プラン生成</div>
-      <div class="card-body">
-        <div class="row g-3 mb-3">
-          <div class="col-md-3">
-            <label class="form-label">年齢</label>
-            <input type="number" id="age" class="form-control" value="25" />
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">目標</label>
-            <select id="goal" class="form-select">
-              <option value="hypertrophy" selected>筋肥大</option>
-              <option value="strength">筋力向上</option>
-              <option value="fat_loss">減量</option>
-            </select>
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">経験</label>
-            <select id="experience" class="form-select">
-              <option value="beginner">初心者</option>
-              <option value="intermediate" selected>中級者</option>
-              <option value="advanced">上級者</option>
-            </select>
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">器具 (カンマ区切り)</label>
-            <input
-              type="text"
-              id="equipment"
-              class="form-control"
-              value="barbell,dumbbell,bench"
-            />
-          </div>
+    <!-- Profile Form -->
+    <div class="card p-3 mb-4">
+      <h5 class="card-title">プロフィール</h5>
+      <div class="row g-2">
+        <div class="col-md-2">
+          <input type="number" id="age" class="form-control" placeholder="年齢" />
         </div>
-        <div class="d-grid">
-          <button id="generatePlanBtn" class="btn btn-success">
-            🎲 初回プラン生成
-          </button>
+        <div class="col-md-3">
+          <select id="goal" class="form-select">
+            <option value="hypertrophy">筋肥大</option>
+            <option value="strength">筋力</option>
+            <option value="fat_loss">減量</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <select id="experience" class="form-select">
+            <option value="beginner">初心者</option>
+            <option value="intermediate">中級</option>
+            <option value="advanced">上級</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <input type="text" id="equipment" class="form-control" placeholder="所持器具 (comma separated)" />
         </div>
       </div>
+      <button class="btn btn-success mt-3" onclick="generatePlan()">初回プラン生成</button>
     </div>
 
-    <!-- 3. Plan Display -->
-    <div class="card mb-4" id="planCard" style="display:none;">
-      <div class="card-header">今週のプラン</div>
-      <div class="card-body" id="plan-area">
-        <!-- plan JSON pretty -->
-      </div>
-    </div>
+    <!-- Plan Display -->
+    <div id="planArea"></div>
 
-    <!-- 4. Log Workout -->
-    <div class="card mb-4" id="logCard" style="display:none;">
-      <div class="card-header">ワークアウト記録</div>
-      <div class="card-body">
-        <div class="row g-2 align-items-end">
-          <div class="col-md-3">
-            <label class="form-label">種目</label>
-            <select id="exerciseSelect" class="form-select"></select>
-          </div>
-          <div class="col-md-2">
-            <label class="form-label">重量 (kg)</label>
-            <input type="number" id="weight" class="form-control" />
-          </div>
-          <div class="col-md-2">
-            <label class="form-label">レップ</label>
-            <input type="number" id="reps" class="form-control" />
-          </div>
-          <div class="col-md-2">
-            <label class="form-label">RPE</label>
-            <input type="number" id="rpe" step="0.5" class="form-control" />
-          </div>
-          <div class="col-md-3 d-grid">
-            <button id="addLogBtn" class="btn btn-outline-primary">追加</button>
-          </div>
-        </div>
-        <hr />
-        <table class="table table-sm" id="logTable">
-          <thead>
-            <tr>
-              <th>日付</th>
-              <th>種目</th>
-              <th>重量</th>
-              <th>reps</th>
-              <th>RPE</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- 5. Progress Graph -->
-    <div class="card mb-4" id="graphCard" style="display:none;">
-      <div class="card-header">過去 4 週間の総セット数</div>
-      <div class="card-body">
-        <canvas id="progressChart" height="120"></canvas>
-      </div>
+    <!-- Progress Graph -->
+    <div class="my-5">
+      <canvas id="progressChart" height="120"></canvas>
     </div>
   </div>
 
-  <script>
-    // Storage Keys
-    const LS_KEY_API = "openai_api_key";
-    const LS_KEY_PLAN = "current_plan";
-    const LS_KEY_LOGS = "workout_logs";
+<script>
+const CLAUDE_ENDPOINT = "https://api.anthropic.com/v1/messages";
+let apiKey = localStorage.getItem('claude_api_key') || '';
+document.getElementById('apiKey').value = apiKey;
 
-    // Elements
-    const apiKeyInput = document.getElementById("apiKeyInput");
-    const saveKeyBtn = document.getElementById("saveKeyBtn");
-    const generatePlanBtn = document.getElementById("generatePlanBtn");
-    const planCard = document.getElementById("planCard");
-    const planArea = document.getElementById("plan-area");
-    const logCard = document.getElementById("logCard");
-    const graphCard = document.getElementById("graphCard");
-    const exerciseSelect = document.getElementById("exerciseSelect");
-    const addLogBtn = document.getElementById("addLogBtn");
-    const logTableBody = document.querySelector("#logTable tbody");
-    const ctxChart = document.getElementById("progressChart").getContext("2d");
-    let chartInstance;
+function saveKey() {
+  apiKey = document.getElementById('apiKey').value.trim();
+  localStorage.setItem('claude_api_key', apiKey);
+  alert('APIキーを保存しました');
+}
 
-    // Initialize UI from localStorage
-    window.addEventListener("DOMContentLoaded", () => {
-      const storedKey = localStorage.getItem(LS_KEY_API);
-      if (storedKey) apiKeyInput.value = storedKey;
-      const storedPlan = JSON.parse(localStorage.getItem(LS_KEY_PLAN) || "null");
-      if (storedPlan) renderPlan(storedPlan);
-      const storedLogs = JSON.parse(localStorage.getItem(LS_KEY_LOGS) || "[]");
-      storedLogs.forEach(addLogRow);
-      updateGraph();
-    });
+function headers() {
+  if (!apiKey) {
+    alert('まずAPIキーを入力してください');
+    throw new Error('API key missing');
+  }
+  return {
+    'Content-Type': 'application/json',
+    'X-API-Key': apiKey,
+    'anthropic-version': '2023-06-01'
+  };
+}
 
-    saveKeyBtn.addEventListener("click", () => {
-      localStorage.setItem(LS_KEY_API, apiKeyInput.value.trim());
-      alert("API キーを保存しました");
-    });
+function fetchClaude(messages){
+  return fetch(CLAUDE_ENDPOINT, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({
+      model: 'claude-3-sonnet-20240229',
+      max_tokens: 1024,
+      temperature: 0.7,
+      messages
+    })
+  }).then(r => r.json());
+}
 
-    generatePlanBtn.addEventListener("click", async () => {
-      const apiKey = apiKeyInput.value.trim();
-      if (!apiKey) return alert("API キーを入力してください");
+function profileData(){
+  return {
+    age: +document.getElementById('age').value,
+    goal: document.getElementById('goal').value,
+    experience: document.getElementById('experience').value,
+    equipment: document.getElementById('equipment').value.split(',').map(e => e.trim()).filter(Boolean)
+  };
+}
 
-      const profile = {
-        age: Number(document.getElementById("age").value),
-        goal: document.getElementById("goal").value,
-        experience: document.getElementById("experience").value,
-        equipment: document.getElementById("equipment").value.split(/[,、]/).map(s => s.trim()).filter(Boolean)
-      };
+async function generatePlan(){
+  const profile = profileData();
+  const prompt = `You are a certified strength coach. Generate a 1‑week workout plan as JSON with keys split_type and days (array of {day, exercises:[{name,sets,reps}]}). All responses must be pure JSON.`;
+  const messages=[{role:'user',content:`Profile: ${JSON.stringify(profile)}`},{role:'assistant',content:prompt}];
 
-      generatePlanBtn.disabled = true;
-      generatePlanBtn.textContent = "生成中...";
-      try {
-        const plan = await callOpenAI(apiKey, profile);
-        localStorage.setItem(LS_KEY_PLAN, JSON.stringify(plan));
-        renderPlan(plan);
-        alert("プランを生成しました！");
-      } catch (err) {
-        console.error(err);
-        alert("プラン生成に失敗しました: " + err.message);
-      } finally {
-        generatePlanBtn.disabled = false;
-        generatePlanBtn.textContent = "🎲 初回プラン生成";
-      }
-    });
+  try{
+    const data = await fetchClaude(messages);
+    const text = data.content?.[0]?.text || '';
+    const jsonText = text.match(/\{[\s\S]*\}/)?.[0];
+    if(!jsonText) throw new Error('JSON not found');
+    const plan = JSON.parse(jsonText);
+    localStorage.setItem('current_plan', JSON.stringify(plan));
+    localStorage.setItem('plan_start', new Date().toISOString());
+    renderPlan(plan);
+  }catch(err){
+    console.error(err);
+    alert('プラン生成に失敗しました');
+  }
+}
 
-    addLogBtn.addEventListener("click", () => {
-      const logs = JSON.parse(localStorage.getItem(LS_KEY_LOGS) || "[]");
-      const entry = {
-        date: new Date().toISOString().slice(0, 10),
-        exercise: exerciseSelect.value,
-        weight: Number(document.getElementById("weight").value),
-        reps: Number(document.getElementById("reps").value),
-        rpe: Number(document.getElementById("rpe").value)
-      };
-      logs.push(entry);
-      localStorage.setItem(LS_KEY_LOGS, JSON.stringify(logs));
-      addLogRow(entry);
-      updateGraph();
-      // reset inputs
-      document.getElementById("weight").value = "";
-      document.getElementById("reps").value = "";
-      document.getElementById("rpe").value = "";
-    });
+function renderPlan(plan){
+  const area=document.getElementById('planArea');
+  area.innerHTML='';
+  if(!plan){area.innerHTML='<p>プランがありません</p>';return;}
+  plan.days.forEach((d,idx)=>{
+    const card=document.createElement('div');
+    card.className='card mb-3 card-log';
+    const body=`<div class="card-body"><h5 class="card-title">Day ${idx+1}: ${d.day}</h5>${d.exercises.map(ex=>`<div>${ex.name} — ${ex.sets}×${ex.reps}</div>`).join('')}<button class="btn btn-outline-primary btn-sm mt-2" onclick='addLog("${d.day}")'>ログを追加</button></div>`;
+    card.innerHTML=body;
+    area.appendChild(card);
+  });
+}
 
-    function addLogRow(e) {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${e.date}</td><td>${e.exercise}</td><td>${e.weight}</td><td>${e.reps}</td><td>${e.rpe}</td>`;
-      logTableBody.appendChild(tr);
-      logCard.style.display = "block";
-    }
+function addLog(day){
+  const exercise=prompt('種目名');
+  const weight=prompt('重量(kg)');
+  const reps=prompt('レップ数');
+  const rpe=prompt('RPE');
+  if(!exercise) return;
+  const entry={date:new Date().toISOString().slice(0,10),exercise,weight:+weight,reps:+reps,rpe:+rpe};
+  const logs=JSON.parse(localStorage.getItem('logs')||'[]');
+  logs.push(entry);
+  localStorage.setItem('logs',JSON.stringify(logs));
+  alert('保存しました');
+  updateChart();
+}
 
-    async function callOpenAI(apiKey, profile) {
-      const system = "You are a certified strength coach. Return a 1-week workout plan as JSON.";
-      const user = `Create a 1-week hypertrophy plan for the following profile in JSON format only. Profile: ${JSON.stringify(profile)}`;
+function updateChart(){
+  const ctx=document.getElementById('progressChart');
+  const logs=JSON.parse(localStorage.getItem('logs')||'[]');
+  const daily={};
+  logs.forEach(l=>{daily[l.date]=(daily[l.date]||0)+1;});
+  const labels=Object.keys(daily).sort();
+  const data=labels.map(k=>daily[k]);
+  if(window.myChart){window.myChart.destroy();}
+  window.myChart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'総セット数',data}]},options:{scales:{y:{beginAtZero:true}}}});
+}
 
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: system },
-            { role: "user", content: user }
-          ],
-          response_format: { type: "json_object" }
-        })
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      return JSON.parse(data.choices[0].message.content);
-    }
+function weeklyCheck(){
+  const start=localStorage.getItem('plan_start');
+  if(!start) return;
+  const startDate=new Date(start);
+  const now=new Date();
+  const diff=(now-startDate)/(1000*60*60*24);
+  if(diff>=7){
+    // gather last week summary (簡易: ログ件数)
+    const logs=JSON.parse(localStorage.getItem('logs')||'[]');
+    const lastWeekLogs=logs.filter(l=> (now-new Date(l.date))/(1000*60*60*24) <=7);
+    const summary={total_logs:lastWeekLogs.length};
+    regeneratePlan(summary);
+  }
+}
 
-    function renderPlan(plan) {
-      planArea.innerHTML = `<pre>${JSON.stringify(plan, null, 2)}</pre>`;
-      planCard.style.display = "block";
-      // Populate exercise dropdown
-      const exercises = plan.days.flatMap(d => d.exercises.map(ex => ex.name));
-      exerciseSelect.innerHTML = exercises.map(ex => `<option value="${ex}">${ex}</option>`).join("");
-      logCard.style.display = "block";
-      graphCard.style.display = "block";
-    }
+async function regeneratePlan(summary){
+  const profile=profileData();
+  const prompt=`You are a certified strength coach. Using this summary ${JSON.stringify(summary)}, create a slightly harder workout plan for the next week in the same JSON format.`;
+  const messages=[{role:'user',content:`Profile: ${JSON.stringify(profile)} \n Summary: ${JSON.stringify(summary)}`},{role:'assistant',content:prompt}];
+  try{
+    const data=await fetchClaude(messages);
+    const text=data.content?.[0]?.text||'';
+    const jsonText=text.match(/\{[\s\S]*\}/)?.[0];
+    const plan=JSON.parse(jsonText);
+    localStorage.setItem('current_plan',JSON.stringify(plan));
+    localStorage.setItem('plan_start',new Date().toISOString());
+    localStorage.setItem('logs','[]'); // reset logs
+    renderPlan(plan);
+  }catch(err){console.error(err);}
+}
 
-    function updateGraph() {
-      const logs = JSON.parse(localStorage.getItem(LS_KEY_LOGS) || "[]");
-      const dailySets = {};
-      logs.forEach(l => {
-        dailySets[l.date] = (dailySets[l.date] || 0) + 1;
-      });
-      const labels = Object.keys(dailySets).sort();
-      const data = labels.map(d => dailySets[d]);
-
-      if (chartInstance) chartInstance.destroy();
-      chartInstance = new Chart(ctxChart, {
-        type: "line",
-        data: {
-          labels,
-          datasets: [
-            {
-              label: "Sets per Day",
-              data,
-              tension: 0.3,
-              fill: false,
-              borderWidth: 2
-            }
-          ]
-        },
-        options: {
-          plugins: {
-            legend: { display: false }
-          },
-          scales: {
-            y: { beginAtZero: true, stepSize: 1 }
-          }
-        }
-      });
-    }
-  </script>
+// Initial load
+const storedPlan=JSON.parse(localStorage.getItem('current_plan')||'null');
+if(storedPlan) renderPlan(storedPlan);
+updateChart();
+setInterval(weeklyCheck, 60*60*1000); // 1時間おきに週判定
+</script>
 </body>
 </html>
