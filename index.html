@@ -3,25 +3,26 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Workout Planner – Claude API版</title>
+  <title>Workout Planner – Claude API版 (修正版)</title>
+  <!-- Bootstrap & Chart.js -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
-    .card-log { max-width: 600px; }
+    .card-log { max-width: 620px; }
   </style>
 </head>
 <body class="bg-light">
   <div class="container py-4">
     <h1 class="mb-4">Workout Planner (Claude API)</h1>
 
-    <!-- API Key -->
+    <!-- ========== API Key ========== -->
     <div class="mb-4">
       <label for="apiKey" class="form-label">Claude API Key</label>
       <input type="password" class="form-control" id="apiKey" placeholder="sk-ant-..." />
       <button class="btn btn-primary mt-2" onclick="saveKey()">保存</button>
     </div>
 
-    <!-- Profile Form -->
+    <!-- ========== Profile Form ========== -->
     <div class="card p-3 mb-4">
       <h5 class="card-title">プロフィール</h5>
       <div class="row g-2">
@@ -49,154 +50,205 @@
       <button class="btn btn-success mt-3" onclick="generatePlan()">初回プラン生成</button>
     </div>
 
-    <!-- Plan Display -->
+    <!-- ========== Plan Display ========== -->
     <div id="planArea"></div>
 
-    <!-- Progress Graph -->
+    <!-- ========== Progress Graph ========== -->
     <div class="my-5">
       <canvas id="progressChart" height="120"></canvas>
     </div>
   </div>
 
 <script>
+// --------------------- Settings ---------------------
 const CLAUDE_ENDPOINT = "https://api.anthropic.com/v1/messages";
+const MODEL = "claude-3-sonnet-20240229";  // 動作確認済みモデル
 let apiKey = localStorage.getItem('claude_api_key') || '';
 document.getElementById('apiKey').value = apiKey;
 
+// --------------------- Helpers ---------------------
 function saveKey() {
   apiKey = document.getElementById('apiKey').value.trim();
+  if (!apiKey) {
+    alert('APIキーを入力してください');
+    return;
+  }
   localStorage.setItem('claude_api_key', apiKey);
   alert('APIキーを保存しました');
 }
 
-function headers() {
+function buildHeaders() {
   if (!apiKey) {
     alert('まずAPIキーを入力してください');
     throw new Error('API key missing');
   }
   return {
     'Content-Type': 'application/json',
-    'X-API-Key': apiKey,
-    'anthropic-version': '2023-06-01'
+    'x-api-key': apiKey,               // Claude API key header (小文字でもOK)
+    'anthropic-version': '2023-06-01'  // required header
   };
 }
 
-function fetchClaude(messages){
-  return fetch(CLAUDE_ENDPOINT, {
+/**
+ * Claude v1/messages wrapper
+ * @param {string} userContent  ユーザープロンプト (単一メッセージ)
+ * @param {string} systemPrompt システム指示 (任意)
+ */
+async function callClaude(userContent, systemPrompt = '') {
+  const body = {
+    model: MODEL,
+    max_tokens: 1024,
+    temperature: 0.7,
+    messages: [ { role: 'user', content: userContent } ]
+  };
+  if (systemPrompt) body.system = systemPrompt;
+
+  const res = await fetch(CLAUDE_ENDPOINT, {
     method: 'POST',
-    headers: headers(),
-    body: JSON.stringify({
-      model: 'claude-3-sonnet-20240229',
-      max_tokens: 1024,
-      temperature: 0.7,
-      messages
-    })
-  }).then(r => r.json());
+    headers: buildHeaders(),
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Claude API error: ${res.status} ${errText}`);
+  }
+
+  const data = await res.json();
+  // Claude returns: { ... , content: [ { type:"text", text:"..." } ] }
+  return data.content?.[0]?.text || '';
 }
 
-function profileData(){
+function profileData() {
   return {
     age: +document.getElementById('age').value,
     goal: document.getElementById('goal').value,
     experience: document.getElementById('experience').value,
-    equipment: document.getElementById('equipment').value.split(',').map(e => e.trim()).filter(Boolean)
+    equipment: document.getElementById('equipment').value.split(',').map(s => s.trim()).filter(Boolean)
   };
 }
 
-async function generatePlan(){
-  const profile = profileData();
-  const prompt = `You are a certified strength coach. Generate a 1‑week workout plan as JSON with keys split_type and days (array of {day, exercises:[{name,sets,reps}]}). All responses must be pure JSON.`;
-  const messages=[{role:'user',content:`Profile: ${JSON.stringify(profile)}`},{role:'assistant',content:prompt}];
+// --------------------- Initial Plan ---------------------
+async function generatePlan() {
+  try {
+    const profile = profileData();
+    const systemPrompt = 'You are a certified strength coach.';
+    const userPrompt = `以下のプロフィールに基づき、1週間分の筋トレプランを純粋なJSONで生成してください。JSONは keys: split_type (string) と days (array of {day, exercises:[{name, sets, reps}]}) を持つこと。余分なテキストは禁止です。\nProfile: ${JSON.stringify(profile)}`;
 
-  try{
-    const data = await fetchClaude(messages);
-    const text = data.content?.[0]?.text || '';
-    const jsonText = text.match(/\{[\s\S]*\}/)?.[0];
-    if(!jsonText) throw new Error('JSON not found');
+    const reply = await callClaude(userPrompt, systemPrompt);
+    const jsonText = reply.match(/\{[\s\S]*\}/)?.[0];
+    if (!jsonText) throw new Error('JSON not found in Claude reply');
+
     const plan = JSON.parse(jsonText);
     localStorage.setItem('current_plan', JSON.stringify(plan));
     localStorage.setItem('plan_start', new Date().toISOString());
     renderPlan(plan);
-  }catch(err){
+  } catch (err) {
     console.error(err);
-    alert('プラン生成に失敗しました');
+    alert('プラン生成に失敗しました。コンソールログを確認してください。');
   }
 }
 
-function renderPlan(plan){
-  const area=document.getElementById('planArea');
-  area.innerHTML='';
-  if(!plan){area.innerHTML='<p>プランがありません</p>';return;}
-  plan.days.forEach((d,idx)=>{
-    const card=document.createElement('div');
-    card.className='card mb-3 card-log';
-    const body=`<div class="card-body"><h5 class="card-title">Day ${idx+1}: ${d.day}</h5>${d.exercises.map(ex=>`<div>${ex.name} — ${ex.sets}×${ex.reps}</div>`).join('')}<button class="btn btn-outline-primary btn-sm mt-2" onclick='addLog("${d.day}")'>ログを追加</button></div>`;
-    card.innerHTML=body;
+// --------------------- Plan Renderer ---------------------
+function renderPlan(plan) {
+  const area = document.getElementById('planArea');
+  area.innerHTML = '';
+  if (!plan) { area.innerHTML = '<p>プランがありません</p>'; return; }
+
+  plan.days.forEach((d, idx) => {
+    const card = document.createElement('div');
+    card.className = 'card mb-3 card-log';
+
+    const exLines = d.exercises.map(ex =>
+      `<div>${ex.name} — ${ex.sets}×${ex.reps}</div>`).join('');
+
+    card.innerHTML = `
+      <div class="card-body">
+        <h5 class="card-title">Day ${idx + 1}: ${d.day}</h5>
+        ${exLines}
+        <button class="btn btn-outline-primary btn-sm mt-2" onclick='addLog("${d.day}")'>ログを追加</button>
+      </div>`;
     area.appendChild(card);
   });
 }
 
-function addLog(day){
-  const exercise=prompt('種目名');
-  const weight=prompt('重量(kg)');
-  const reps=prompt('レップ数');
-  const rpe=prompt('RPE');
-  if(!exercise) return;
-  const entry={date:new Date().toISOString().slice(0,10),exercise,weight:+weight,reps:+reps,rpe:+rpe};
-  const logs=JSON.parse(localStorage.getItem('logs')||'[]');
+// --------------------- Logging ---------------------
+function addLog(day) {
+  const exercise = prompt('種目名'); if (!exercise) return;
+  const weight = +prompt('重量(kg)');
+  const reps    = +prompt('レップ数');
+  const rpe     = +prompt('RPE');
+
+  const entry = {
+    date: new Date().toISOString().slice(0, 10),
+    exercise, weight, reps, rpe
+  };
+  const logs = JSON.parse(localStorage.getItem('logs') || '[]');
   logs.push(entry);
-  localStorage.setItem('logs',JSON.stringify(logs));
+  localStorage.setItem('logs', JSON.stringify(logs));
   alert('保存しました');
   updateChart();
 }
 
-function updateChart(){
-  const ctx=document.getElementById('progressChart');
-  const logs=JSON.parse(localStorage.getItem('logs')||'[]');
-  const daily={};
-  logs.forEach(l=>{daily[l.date]=(daily[l.date]||0)+1;});
-  const labels=Object.keys(daily).sort();
-  const data=labels.map(k=>daily[k]);
-  if(window.myChart){window.myChart.destroy();}
-  window.myChart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'総セット数',data}]},options:{scales:{y:{beginAtZero:true}}}});
+// --------------------- Progress Chart ---------------------
+function updateChart() {
+  const ctx = document.getElementById('progressChart');
+  const logs = JSON.parse(localStorage.getItem('logs') || '[]');
+  const daily = {};
+  logs.forEach(l => {
+    daily[l.date] = (daily[l.date] || 0) + 1;
+  });
+  const labels = Object.keys(daily).sort();
+  const data = labels.map(k => daily[k]);
+  if (window.myChart) window.myChart.destroy();
+  window.myChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets: [{ label: '総セット数', data }] },
+    options: { scales: { y: { beginAtZero: true } } }
+  });
 }
 
-function weeklyCheck(){
-  const start=localStorage.getItem('plan_start');
-  if(!start) return;
-  const startDate=new Date(start);
-  const now=new Date();
-  const diff=(now-startDate)/(1000*60*60*24);
-  if(diff>=7){
-    // gather last week summary (簡易: ログ件数)
-    const logs=JSON.parse(localStorage.getItem('logs')||'[]');
-    const lastWeekLogs=logs.filter(l=> (now-new Date(l.date))/(1000*60*60*24) <=7);
-    const summary={total_logs:lastWeekLogs.length};
-    regeneratePlan(summary);
+// --------------------- Weekly Regeneration ---------------------
+function weeklyCheck() {
+  const start = localStorage.getItem('plan_start');
+  if (!start) return;
+  const diffDays = (Date.now() - new Date(start)) / 86_400_000; // ms → day
+  if (diffDays < 7) return; // 1週間経っていない
+
+  // ------------- 前週要約 (超簡易: ログ数) -------------
+  const logs = JSON.parse(localStorage.getItem('logs') || '[]');
+  const summary = { total_logs: logs.length };
+  regeneratePlan(summary);
+}
+
+async function regeneratePlan(summary) {
+  try {
+    const profile = profileData();
+    const systemPrompt = 'You are a certified strength coach.';
+    const userPrompt = `以下のプロフィールと先週のサマリーに基づき、少しだけ強度を高めた1週間分のプランを純粋なJSONで生成してください。JSON仕様は以前と同じ。\nProfile: ${JSON.stringify(profile)}\nSummary: ${JSON.stringify(summary)}`;
+
+    const reply = await callClaude(userPrompt, systemPrompt);
+    const jsonText = reply.match(/\{[\s\S]*\}/)?.[0];
+    if (!jsonText) throw new Error('JSON not found');
+
+    const plan = JSON.parse(jsonText);
+    localStorage.setItem('current_plan', JSON.stringify(plan));
+    localStorage.setItem('plan_start', new Date().toISOString());
+    localStorage.setItem('logs', '[]'); // reset logs
+    renderPlan(plan);
+  } catch (err) {
+    console.error(err);
   }
 }
 
-async function regeneratePlan(summary){
-  const profile=profileData();
-  const prompt=`You are a certified strength coach. Using this summary ${JSON.stringify(summary)}, create a slightly harder workout plan for the next week in the same JSON format.`;
-  const messages=[{role:'user',content:`Profile: ${JSON.stringify(profile)} \n Summary: ${JSON.stringify(summary)}`},{role:'assistant',content:prompt}];
-  try{
-    const data=await fetchClaude(messages);
-    const text=data.content?.[0]?.text||'';
-    const jsonText=text.match(/\{[\s\S]*\}/)?.[0];
-    const plan=JSON.parse(jsonText);
-    localStorage.setItem('current_plan',JSON.stringify(plan));
-    localStorage.setItem('plan_start',new Date().toISOString());
-    localStorage.setItem('logs','[]'); // reset logs
-    renderPlan(plan);
-  }catch(err){console.error(err);}
-}
-
-// Initial load
-const storedPlan=JSON.parse(localStorage.getItem('current_plan')||'null');
-if(storedPlan) renderPlan(storedPlan);
-updateChart();
-setInterval(weeklyCheck, 60*60*1000); // 1時間おきに週判定
+// --------------------- Init ---------------------
+(function init() {
+  const storedPlan = JSON.parse(localStorage.getItem('current_plan') || 'null');
+  if (storedPlan) renderPlan(storedPlan);
+  updateChart();
+  // 1時間おきに週判定
+  setInterval(weeklyCheck, 60 * 60 * 1000);
+})();
 </script>
 </body>
 </html>
