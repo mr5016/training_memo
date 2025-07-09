@@ -3,26 +3,30 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Workout Planner – Claude API版 (v2・400対策)</title>
-  <!-- Bootstrap / Chart.js -->
+  <title>Workout Planner – OpenAI API版 (v1)</title>
+  <!-- Bootstrap & Chart.js -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
-    body { background:#f7f7f7; }
+    body { background:#f4f4f4; }
     .card-log { max-width:32rem; }
   </style>
 </head>
 <body>
 <div class="container py-4">
-  <h1 class="mb-4">Workout Planner – Claude 3</h1>
+  <h1 class="mb-4">Workout Planner – OpenAI GPT‑4o</h1>
+
+  <!-- CORS / FILE warning -->
+  <div id="fileWarn" class="alert alert-warning d-none"></div>
+
   <!-- API KEY INPUT -->
   <div class="mb-3">
-    <label class="form-label">Claude APIキー</label>
+    <label class="form-label">OpenAI APIキー</label>
     <div class="input-group">
-      <input id="apiKeyInput" type="password" class="form-control" placeholder="sk-..." />
+      <input id="apiKeyInput" type="password" class="form-control" placeholder="sk-···" />
       <button class="btn btn-outline-primary" onclick="saveKey()">保存</button>
     </div>
-    <small class="text-muted">ブラウザの localStorage にのみ保存されます</small>
+    <small class="text-muted">キーはブラウザの LocalStorage のみで使用されます</small>
   </div>
 
   <!-- PROFILE FORM -->
@@ -48,109 +52,136 @@
 </div>
 
 <script>
-const CLAUDE_ENDPOINT = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-3-sonnet-20240229';
+// ------------------ CONFIG ------------------
+const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
+const MODEL = 'gpt-4o-mini';
 
-// -------------- Key Handling --------------
-function saveKey(){ const key = document.getElementById('apiKeyInput').value.trim(); localStorage.setItem('CLAUDE_KEY', key); alert('キーを保存しました'); }
-function getKey(){ return localStorage.getItem('CLAUDE_KEY') || ''; }
-window.onload = () => { document.getElementById('apiKeyInput').value = getKey(); loadPlan(); };
+// ------------------ Key Handling ------------------
+function saveKey(){
+  const key = document.getElementById('apiKeyInput').value.trim();
+  localStorage.setItem('OPENAI_KEY', key);
+  showAlert('APIキーを保存しました','success');
+}
+function getKey(){ return localStorage.getItem('OPENAI_KEY') || ''; }
 
-// -------------- Utility --------------
+// ------------------ On Load ------------------
+window.onload = () => {
+  document.getElementById('apiKeyInput').value = getKey();
+  if(location.protocol === 'file:'){
+    const w=document.getElementById('fileWarn');
+    w.textContent = 'file:// で開いている場合、ネットワーク要求がブロックされることがあります。ターミナルで `python -m http.server 8000` を実行し、 http://localhost:8000 から開くことを推奨します。';
+    w.classList.remove('d-none');
+  }
+  loadPlan();
+  renderChart();
+};
+
+// ------------------ Utility ------------------
 function showAlert(msg, type='danger'){
-  document.getElementById('alertBox').innerHTML = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">${msg}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>`;
+  const box=document.getElementById('alertBox');
+  box.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show mt-3" role="alert">${msg}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>`;
 }
 function compress(obj, max=1200){
   let str = JSON.stringify(obj);
-  if(str.length > max){ str = str.slice(0,max) + '...'; }
+  if(str.length>max) str = str.slice(0,max)+'...';
   return str;
 }
 
-// -------------- Claude Fetch --------------
-async function callClaude(userContent){
+// ------------------ OpenAI Fetch ------------------
+async function callOpenAI(userContent){
   const apiKey = getKey();
-  if(!apiKey){ showAlert('APIキーが設定されていません'); throw 'no key'; }
+  if(!apiKey){ showAlert('APIキーが設定されていません'); throw new Error('API key missing'); }
   const body = {
     model: MODEL,
     max_tokens: 512,
     temperature: 0.7,
-    system: 'You are a certified strength coach. Reply JSON only.',
-    messages: [{ role:'user', content: userContent }]
+    response_format: { type: 'json_object' },
+    messages: [
+      { role:'system', content:'You are a certified strength coach. Reply with JSON only.' },
+      { role:'user',   content: userContent }
+    ]
   };
-  const res = await fetch(CLAUDE_ENDPOINT, {
-    method:'POST',
-    headers:{
-      'content-type':'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version':'2023-06-01'
-    },
-    body: JSON.stringify(body)
-  });
-  if(!res.ok){ const txt = await res.text(); console.error('Claude error', txt); throw new Error(txt); }
-  return res.json();
+  try{
+    const res = await fetch(OPENAI_ENDPOINT, {
+      method:'POST',
+      headers:{
+        'content-type':'application/json',
+        'authorization':'Bearer '+apiKey
+      },
+      body: JSON.stringify(body)
+    });
+    if(!res.ok){ const txt = await res.text(); console.error('OpenAI error', txt); throw new Error(txt); }
+    return res.json();
+  }catch(err){
+    console.error('Network error', err);
+    showAlert('通信エラー: fetch に失敗しました。<br>・ネット接続 / VPN<br>・APIキー誤り<br>・CORS (file:// → http 経由で再読み込み)<br>を確認してください。');
+    throw err;
+  }
 }
 
-// -------------- Plan Generation --------------
-function readProfile(){ return {
-  age: +(document.getElementById('age').value||0),
-  goal: document.getElementById('goal').value||'hypertrophy',
-  experience: document.getElementById('experience').value||'beginner',
-  equipment: document.getElementById('equipment').value.split(',').map(s=>s.trim()).filter(Boolean)
-}; }
+// ------------------ Plan Generation ------------------
+function readProfile(){
+  return {
+    age:+(document.getElementById('age').value||0),
+    goal:document.getElementById('goal').value||'hypertrophy',
+    experience:document.getElementById('experience').value||'beginner',
+    equipment:document.getElementById('equipment').value.split(',').map(s=>s.trim()).filter(Boolean)
+  };
+}
 async function generateInitialPlan(){
   try{
     const profile = readProfile();
-    const prompt = compress({profile, last_week_summary:null});
-    const data = await callClaude(prompt);
-    const jsonText = data?.content?.[0]?.text || '{}';
-    const plan = JSON.parse(jsonText.match(/\{[\s\S]*}/)[0]);
+    const userPayload = compress({profile, last_week_summary:null});
+    const data = await callOpenAI(userPayload);
+    const jsonText = data?.choices?.[0]?.message?.content || '{}';
+    const match = jsonText.match(/\{[\s\S]*\}/);
+    if(!match){ throw new Error('OpenAI response did not contain JSON'); }
+    const plan = JSON.parse(match[0]);
     localStorage.setItem('WK_PLAN', JSON.stringify(plan));
     renderPlan(plan);
-    showAlert('プラン生成成功!', 'success');
-  }catch(e){ console.error(e); showAlert('プラン生成に失敗しました: '+e.message); }
+    showAlert('プラン生成成功!','success');
+  }catch(e){ console.error(e); if(!e.silent) showAlert('プラン生成に失敗しました: '+e.message); }
 }
-function loadPlan(){ const saved = localStorage.getItem('WK_PLAN'); if(saved){ try{ renderPlan(JSON.parse(saved)); }catch{} } }
+function loadPlan(){ const s=localStorage.getItem('WK_PLAN'); if(s){ try{ renderPlan(JSON.parse(s)); }catch{} } }
 
-// -------------- Render Functions --------------
+// ------------------ Render Functions ------------------
 function renderPlan(plan){
-  const cont = document.getElementById('planContainer'); cont.innerHTML='';
+  const cont=document.getElementById('planContainer'); cont.innerHTML='';
   if(!plan?.days){ cont.textContent='プランが空です'; return; }
   plan.days.forEach(day=>{
-    const card = document.createElement('div'); card.className='card mb-3';
-    card.innerHTML = `<div class="card-header fw-bold">${day.day}</div><div class="card-body"></div>`;
-    const body = card.querySelector('.card-body');
+    const card=document.createElement('div'); card.className='card mb-3';
+    card.innerHTML=`<div class="card-header fw-bold">${day.day}</div><div class="card-body"></div>`;
+    const body=card.querySelector('.card-body');
     day.exercises.forEach(ex=>{
-      const item = document.createElement('div'); item.className='d-flex justify-content-between align-items-center mb-2';
-      item.innerHTML = `<span>${ex.name} (${ex.sets}×${ex.reps})</span><button class="btn btn-sm btn-outline-secondary" onclick='addLog("${day.day}", "${ex.name}")'>ログ追加</button>`;
+      const item=document.createElement('div'); item.className='d-flex justify-content-between align-items-center mb-2';
+      item.innerHTML=`<span>${ex.name} (${ex.sets}×${ex.reps})</span><button class="btn btn-sm btn-outline-secondary" onclick='addLog("${day.day}", "${ex.name}")'>ログ追加</button>`;
       body.appendChild(item);
     });
     cont.appendChild(card);
   });
 }
 function addLog(day, ex){
-  const weight = prompt(`${ex} の重量 (kg)`);
-  if(weight===null) return;
-  const reps = prompt(`${ex} のレップ数`);
-  const rpe = prompt(`${ex} のRPE (1-10)`);
-  const entry = {date: new Date().toISOString().slice(0,10), exercise: ex, weight:+weight, reps:+reps, rpe:+rpe};
-  const logs = JSON.parse(localStorage.getItem('WK_LOGS')||'[]'); logs.push(entry); localStorage.setItem('WK_LOGS', JSON.stringify(logs));
+  const weight=prompt(`${ex} の重量 (kg)`); if(weight===null) return;
+  const reps=prompt(`${ex} のレップ数`); if(reps===null) return;
+  const rpe=prompt(`${ex} のRPE (1-10)`); if(rpe===null) return;
+  const entry={date:new Date().toISOString().slice(0,10), exercise:ex, weight:+weight, reps:+reps, rpe:+rpe};
+  const logs=JSON.parse(localStorage.getItem('WK_LOGS')||'[]'); logs.push(entry); localStorage.setItem('WK_LOGS', JSON.stringify(logs));
   showAlert('ログを保存しました','success');
   renderChart();
 }
 
-// -------------- Chart --------------
+// ------------------ Chart ------------------
 let chart;
 function renderChart(){
-  const logs = JSON.parse(localStorage.getItem('WK_LOGS')||'[]');
-  const daily = {};
+  const logs=JSON.parse(localStorage.getItem('WK_LOGS')||'[]');
+  const daily={};
   logs.forEach(l=>{ daily[l.date]=(daily[l.date]||0)+1; });
-  const labels = Object.keys(daily).sort();
-  const data = labels.map(d=>daily[d]);
+  const labels=Object.keys(daily).sort();
+  const data=labels.map(d=>daily[d]);
   if(chart){ chart.destroy(); }
   const ctx=document.getElementById('progressChart');
-  chart = new Chart(ctx,{ type:'line', data:{ labels, datasets:[{ label:'総セット数', data }] }, options:{ plugins:{legend:{display:false}} } });
+  chart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'総セット数',data}]},options:{plugins:{legend:{display:false}}}});
 }
-renderChart();
 </script>
 </body>
 </html>
