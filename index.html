@@ -1,129 +1,195 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OpenAI API キー動作テスト & 会話デモ</title>
-  <!-- Bootstrap -->
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Workout Planner – OpenAI 簡易メニュー生成デモ</title>
+  <!-- Bootstrap for quick layout -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <style>
-    body { padding-top: 4rem; }
+    body { padding-top: 3rem; }
     #statusMsg { min-height: 2rem; }
-    #chatLog { height: 280px; overflow-y: auto; border: 1px solid #ced4da; border-radius: .375rem; padding: .5rem; background:#f8f9fa; }
-    .msg-user { text-align: right; }
-    .msg-assist { text-align: left; color:#0d6efd; }
-    .msg { margin-bottom: .25rem; white-space: pre-wrap; word-break: break-word; }
+    #planArea pre { white-space: pre-wrap; word-break: break-word; }
   </style>
 </head>
-<body class="container">
-  <h1 class="h3 mb-4">OpenAI API キーテスト & 動作確認チャット</h1>
+<body class="bg-light">
+<div class="container">
+  <h1 class="mb-4">🏋️‍♂️ Workout Planner – API 接続 & メニュー生成テスト</h1>
 
-  <!-- API KEY INPUT -->
-  <div class="mb-3 row">
-    <label class="col-sm-2 col-form-label">OpenAI&nbsp;APIキー</label>
-    <div class="col-sm-6">
-      <input type="text" id="apiKeyInput" class="form-control" placeholder="sk-..." />
-    </div>
-    <div class="col-sm-2">
-      <button id="saveKeyBtn" class="btn btn-primary w-100">保存</button>
+  <!-- API KEY -->
+  <div class="card mb-4">
+    <div class="card-header">1️⃣ OpenAI API キー</div>
+    <div class="card-body">
+      <div class="input-group">
+        <input id="apiKeyInput" type="text" class="form-control" placeholder="sk-..." />
+        <button id="saveKeyBtn" class="btn btn-primary">キー保存 & テスト</button>
+      </div>
+      <div id="statusMsg" class="mt-2"></div>
     </div>
   </div>
-  <div id="statusMsg" class="mb-4"></div>
 
-  <!-- CHAT AREA -->
-  <div id="chatArea" style="display:none;">
-    <h2 class="h5 mb-2">簡易チャット</h2>
-    <div id="chatLog" class="mb-3"></div>
-    <div class="input-group">
-      <textarea id="userInput" class="form-control" rows="2" placeholder="メッセージを入力..."></textarea>
-      <button id="sendBtn" class="btn btn-success">送信</button>
+  <!-- PREVIOUS LIFT INPUT -->
+  <div id="liftCard" class="card mb-4 d-none">
+    <div class="card-header">2️⃣ 前回の実績を入力</div>
+    <div class="card-body">
+      <div class="row g-3 align-items-end">
+        <div class="col-md-4">
+          <label class="form-label fw-bold">ベンチプレス</label>
+          <div class="input-group">
+            <input id="benchWeight" type="number" class="form-control" placeholder="重量 kg" step="0.5" min="0">
+            <input id="benchReps" type="number" class="form-control" placeholder="回数" step="1" min="1">
+          </div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-bold">ダンベルプレス</label>
+          <div class="input-group">
+            <input id="dbWeight" type="number" class="form-control" placeholder="重量 kg" step="0.5" min="0">
+            <input id="dbReps" type="number" class="form-control" placeholder="回数" step="1" min="1">
+          </div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-bold">ペックフライ</label>
+          <div class="input-group">
+            <input id="flyWeight" type="number" class="form-control" placeholder="重量 kg" step="0.5" min="0">
+            <input id="flyReps" type="number" class="form-control" placeholder="回数" step="1" min="1">
+          </div>
+        </div>
+      </div>
+      <button id="generateBtn" class="btn btn-success mt-3">💡 メニュー生成</button>
     </div>
   </div>
+
+  <!-- PLAN OUTPUT -->
+  <div id="planArea" class="card d-none">
+    <div class="card-header">3️⃣ 生成された 1 週間メニュー</div>
+    <div class="card-body">
+      <pre id="planText"></pre>
+    </div>
+  </div>
+
+</div>
 
 <script>
-const ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 const MODEL = 'gpt-4o-mini';
-let apiKey = localStorage.getItem('OPENAI_KEY_TEST') || '';
-let messages = [{ role:'system', content:'You are a helpful assistant.' }];
+const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 
-// DOM refs
-const keyInput = document.getElementById('apiKeyInput');
-const saveKeyBtn = document.getElementById('saveKeyBtn');
-const statusMsg = document.getElementById('statusMsg');
-const chatArea  = document.getElementById('chatArea');
-const chatLog   = document.getElementById('chatLog');
-const userInput = document.getElementById('userInput');
-const sendBtn   = document.getElementById('sendBtn');
+// ========== Key handling ==========
+function sanitizeKey(k){
+  return (k||'').replace(/[\s\u3000]+/g,'').replace(/[^\x00-\x7F]/g,'');
+}
+function saveKey(){
+  const key = sanitizeKey(document.getElementById('apiKeyInput').value);
+  localStorage.setItem('OPENAI_KEY', key);
+  return key;
+}
+function loadKey(){
+  const k = localStorage.getItem('OPENAI_KEY') || '';
+  document.getElementById('apiKeyInput').value = k;
+  return k;
+}
 
-keyInput.value = apiKey;
-if(apiKey) { validateKey(); }
+// ========== UI helpers ==========
+function setStatus(html, ok=true){
+  const el = document.getElementById('statusMsg');
+  el.className = ok ? 'text-success' : 'text-danger';
+  el.innerHTML = html;
+}
+function toggleLiftSection(show){
+  document.getElementById('liftCard').classList.toggle('d-none', !show);
+}
+function togglePlanSection(show){
+  document.getElementById('planArea').classList.toggle('d-none', !show);
+}
 
-saveKeyBtn.addEventListener('click', () => {
-  apiKey = keyInput.value.trim();
-  if(!apiKey) { showStatus('APIキーを入力してください', false); return; }
-  localStorage.setItem('OPENAI_KEY_TEST', apiKey);
-  validateKey();
-});
-
-async function validateKey(){
-  showStatus('キーを検証中...', true);
+// ========== OpenAI simple GET /models test ==========
+async function testKey(key){
   try{
     const res = await fetch('https://api.openai.com/v1/models', {
-      method:'GET',
-      headers:{ 'Authorization':'Bearer '+apiKey }
+      headers:{'Authorization':'Bearer '+key}
     });
-    if(!res.ok){ throw new Error(`HTTP ${res.status}`); }
-    const data = await res.json();
-    const modelSample = data?.data?.[0]?.id || 'unknown';
-    showStatus(`✔️ 有効です（例: ${modelSample}）`, true);
-    chatArea.style.display = '';
+    if(!res.ok){
+      setStatus(`❌ 接続失敗：${res.status} ${res.statusText}`, false);
+      toggleLiftSection(false);
+      return false;
+    }
+    const js = await res.json();
+    const first = js.data?.[0]?.id || 'n/a';
+    setStatus(`✔️ 有効です（例: ${first}）`);
+    toggleLiftSection(true);
+    return true;
   }catch(err){
-    showStatus('❌ キー検証失敗: '+err.message, false);
-    chatArea.style.display = 'none';
+    console.error(err);
+    setStatus('❌ ネットワークエラー: '+err.message, false);
+    toggleLiftSection(false);
+    return false;
   }
 }
 
-function showStatus(msg, success){
-  statusMsg.textContent = msg;
-  statusMsg.className = success ? 'text-success' : 'text-danger';
+// ========== Menu Generation ==========
+function buildPrompt(){
+  const bw = document.getElementById('benchWeight').value;
+  const br = document.getElementById('benchReps').value;
+  const dw = document.getElementById('dbWeight').value;
+  const dr = document.getElementById('dbReps').value;
+  const fw = document.getElementById('flyWeight').value;
+  const fr = document.getElementById('flyReps').value;
+  return `以下の前回実績を参考に、1週間分の胸トレメニューを日本語で提案してください。JSON 形式で { \"day1\": [\"エクササイズ\"], ... } で返答してください。\n\nベンチプレス: ${bw} kg x ${br} reps\nダンベルプレス: ${dw} kg x ${dr} reps\nペックフライ: ${fw} kg x ${fr} reps`;
 }
 
-function appendMsg(role, text){
-  const div = document.createElement('div');
-  div.className = 'msg '+(role==='user'?'msg-user':'msg-assist');
-  div.textContent = text;
-  chatLog.appendChild(div);
-  chatLog.scrollTop = chatLog.scrollHeight;
-}
+async function generatePlan(){
+  togglePlanSection(false);
+  const key = sanitizeKey(document.getElementById('apiKeyInput').value);
+  if(!key){ alert('APIキーが設定されていません'); return; }
 
-sendBtn.addEventListener('click', async ()=>{
-  const content = userInput.value.trim();
-  if(!content){ return; }
-  userInput.value='';
-  appendMsg('user', content);
-  messages.push({ role:'user', content });
-  sendBtn.disabled = true;
+  const body={
+    model: MODEL,
+    max_tokens: 512,
+    temperature: 0.7,
+    response_format:{type:'json_object'},
+    messages:[
+      {role:'system', content:'You are a certified strength coach.'},
+      {role:'user', content: buildPrompt()}
+    ]
+  };
+
   try{
-    const body = { model: MODEL, max_tokens:256, temperature:0.7, messages};
-    const res = await fetch(ENDPOINT, {
+    const res = await fetch(OPENAI_URL, {
       method:'POST',
       headers:{
         'Content-Type':'application/json',
-        'Authorization':'Bearer '+apiKey
+        'Authorization':'Bearer '+key
       },
       body: JSON.stringify(body)
     });
-    if(!res.ok){ throw new Error('HTTP '+res.status); }
+    if(!res.ok){
+      const txt = await res.text();
+      alert('生成失敗:\n'+txt);
+      return;
+    }
     const data = await res.json();
-    const assistantMsg = data.choices[0].message.content.trim();
-    messages.push({ role:'assistant', content: assistantMsg });
-    appendMsg('assistant', assistantMsg);
+    const content = data.choices?.[0]?.message?.content;
+    document.getElementById('planText').textContent = content || JSON.stringify(data, null, 2);
+    togglePlanSection(true);
   }catch(err){
-    appendMsg('assistant', '❌ エラー: '+err.message);
-  }finally{
-    sendBtn.disabled = false;
+    console.error(err);
+    alert('ネットワークまたはパースエラー: '+err.message);
   }
+}
+
+// ========== Event Wiring ==========
+document.getElementById('saveKeyBtn').addEventListener('click', async ()=>{
+  const key = saveKey();
+  if(!key){ setStatus('❌ キーが空です', false); return; }
+  await testKey(key);
 });
+
+document.getElementById('generateBtn').addEventListener('click', generatePlan);
+
+// On load
+(async ()=>{
+  const key = loadKey();
+  if(key){ await testKey(key); }
+})();
 </script>
 </body>
 </html>
