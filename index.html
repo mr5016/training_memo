@@ -3,18 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Workout Planner – OpenAI 簡易メニュー生成デモ</title>
-  <!-- Bootstrap for quick layout -->
+  <title>Workout Planner – 5セット対応メニュー生成デモ</title>
+  <!-- Bootstrap -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <style>
     body { padding-top: 3rem; }
     #statusMsg { min-height: 2rem; }
     #planArea pre { white-space: pre-wrap; word-break: break-word; }
+    table.input-table td { padding: 2px; }
   </style>
 </head>
 <body class="bg-light">
 <div class="container">
-  <h1 class="mb-4">🏋️‍♂️ Workout Planner – API 接続 & メニュー生成テスト</h1>
+  <h1 class="mb-4">🏋️‍♂️ Workout Planner – 5セット対応メニュー生成</h1>
 
   <!-- API KEY -->
   <div class="card mb-4">
@@ -30,29 +31,51 @@
 
   <!-- PREVIOUS LIFT INPUT -->
   <div id="liftCard" class="card mb-4 d-none">
-    <div class="card-header">2️⃣ 前回の実績を入力</div>
+    <div class="card-header">2️⃣ 前回の実績 (最大5セット) を入力</div>
     <div class="card-body">
-      <div class="row g-3 align-items-end">
+      <div class="row g-4">
+        <!-- Bench -->
         <div class="col-md-4">
-          <label class="form-label fw-bold">ベンチプレス</label>
-          <div class="input-group">
-            <input id="benchWeight" type="number" class="form-control" placeholder="重量 kg" step="0.5" min="0">
-            <input id="benchReps" type="number" class="form-control" placeholder="回数" step="1" min="1">
-          </div>
+          <h5 class="fw-bold text-center">ベンチプレス</h5>
+          <table class="table table-sm input-table">
+            <thead><tr><th>重量 kg</th><th>回数</th></tr></thead>
+            <tbody>
+              <!-- 5 rows -->
+              <script>
+                for(let i=1;i<=5;i++){
+                  document.write(`<tr><td><input id="benchW${i}" type="number" class="form-control" step="0.5" min="0"></td><td><input id="benchR${i}" type="number" class="form-control" step="1" min="1"></td></tr>`);
+                }
+              </script>
+            </tbody>
+          </table>
         </div>
+        <!-- Dumbbell Press -->
         <div class="col-md-4">
-          <label class="form-label fw-bold">ダンベルプレス</label>
-          <div class="input-group">
-            <input id="dbWeight" type="number" class="form-control" placeholder="重量 kg" step="0.5" min="0">
-            <input id="dbReps" type="number" class="form-control" placeholder="回数" step="1" min="1">
-          </div>
+          <h5 class="fw-bold text-center">ダンベルプレス</h5>
+          <table class="table table-sm input-table">
+            <thead><tr><th>重量 kg</th><th>回数</th></tr></thead>
+            <tbody>
+              <script>
+                for(let i=1;i<=5;i++){
+                  document.write(`<tr><td><input id="dbW${i}" type="number" class="form-control" step="0.5" min="0"></td><td><input id="dbR${i}" type="number" class="form-control" step="1" min="1"></td></tr>`);
+                }
+              </script>
+            </tbody>
+          </table>
         </div>
+        <!-- Pec Fly -->
         <div class="col-md-4">
-          <label class="form-label fw-bold">ペックフライ</label>
-          <div class="input-group">
-            <input id="flyWeight" type="number" class="form-control" placeholder="重量 kg" step="0.5" min="0">
-            <input id="flyReps" type="number" class="form-control" placeholder="回数" step="1" min="1">
-          </div>
+          <h5 class="fw-bold text-center">ペックフライ</h5>
+          <table class="table table-sm input-table">
+            <thead><tr><th>重量 kg</th><th>回数</th></tr></thead>
+            <tbody>
+              <script>
+                for(let i=1;i<=5;i++){
+                  document.write(`<tr><td><input id="flyW${i}" type="number" class="form-control" step="0.5" min="0"></td><td><input id="flyR${i}" type="number" class="form-control" step="1" min="1"></td></tr>`);
+                }
+              </script>
+            </tbody>
+          </table>
         </div>
       </div>
       <button id="generateBtn" class="btn btn-success mt-3">💡 メニュー生成</button>
@@ -61,7 +84,7 @@
 
   <!-- PLAN OUTPUT -->
   <div id="planArea" class="card d-none">
-    <div class="card-header">3️⃣ 生成された 1 週間メニュー</div>
+    <div class="card-header">3️⃣ 生成された 1 週間メニュー (JSON)</div>
     <div class="card-body">
       <pre id="planText"></pre>
     </div>
@@ -74,122 +97,82 @@ const MODEL = 'gpt-4o-mini';
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 
 // ========== Key handling ==========
-function sanitizeKey(k){
-  return (k||'').replace(/[\s\u3000]+/g,'').replace(/[^\x00-\x7F]/g,'');
-}
-function saveKey(){
-  const key = sanitizeKey(document.getElementById('apiKeyInput').value);
-  localStorage.setItem('OPENAI_KEY', key);
-  return key;
-}
-function loadKey(){
-  const k = localStorage.getItem('OPENAI_KEY') || '';
-  document.getElementById('apiKeyInput').value = k;
-  return k;
-}
+function sanitizeKey(k){ return (k||'').replace(/[\s\u3000]+/g,'').replace(/[^\x00-\x7F]/g,''); }
+function saveKey(){ const key=sanitizeKey(document.getElementById('apiKeyInput').value); localStorage.setItem('OPENAI_KEY',key); return key; }
+function loadKey(){ const k=localStorage.getItem('OPENAI_KEY')||''; document.getElementById('apiKeyInput').value=k; return k; }
 
 // ========== UI helpers ==========
-function setStatus(html, ok=true){
-  const el = document.getElementById('statusMsg');
-  el.className = ok ? 'text-success' : 'text-danger';
-  el.innerHTML = html;
-}
-function toggleLiftSection(show){
-  document.getElementById('liftCard').classList.toggle('d-none', !show);
-}
-function togglePlanSection(show){
-  document.getElementById('planArea').classList.toggle('d-none', !show);
-}
+function setStatus(html, ok=true){ const el=document.getElementById('statusMsg'); el.className= ok? 'text-success':'text-danger'; el.innerHTML=html; }
+function toggleLiftSection(show){ document.getElementById('liftCard').classList.toggle('d-none',!show); }
+function togglePlanSection(show){ document.getElementById('planArea').classList.toggle('d-none',!show); }
 
 // ========== OpenAI simple GET /models test ==========
 async function testKey(key){
   try{
-    const res = await fetch('https://api.openai.com/v1/models', {
-      headers:{'Authorization':'Bearer '+key}
-    });
-    if(!res.ok){
-      setStatus(`❌ 接続失敗：${res.status} ${res.statusText}`, false);
-      toggleLiftSection(false);
-      return false;
-    }
-    const js = await res.json();
-    const first = js.data?.[0]?.id || 'n/a';
-    setStatus(`✔️ 有効です（例: ${first}）`);
-    toggleLiftSection(true);
-    return true;
-  }catch(err){
-    console.error(err);
-    setStatus('❌ ネットワークエラー: '+err.message, false);
-    toggleLiftSection(false);
-    return false;
+    const res=await fetch('https://api.openai.com/v1/models',{headers:{'Authorization':'Bearer '+key}});
+    if(!res.ok){ setStatus(`❌ 接続失敗：${res.status} ${res.statusText}`,false); toggleLiftSection(false); return false; }
+    const js=await res.json(); const first=js.data?.[0]?.id||'n/a'; setStatus(`✔️ 有効です（例: ${first}）`); toggleLiftSection(true); return true;
+  }catch(err){ console.error(err); setStatus('❌ ネットワークエラー: '+err.message,false); toggleLiftSection(false); return false; }
+}
+
+// ========== Helper to collect 5-set data ==========
+function collectSets(prefix){
+  const arr=[];
+  for(let i=1;i<=5;i++){
+    const w=document.getElementById(prefix+'W'+i).value;
+    const r=document.getElementById(prefix+'R'+i).value;
+    if(w && r){ arr.push(`${w}kg x ${r}`); }
   }
+  return arr;
+}
+
+// ========== Prompt Builder ==========
+function buildPrompt(){
+  const bench=collectSets('bench');
+  const db=collectSets('db');
+  const fly=collectSets('fly');
+  return `以下は前回の胸トレ各種目 (最大5セット) の実績です。\n`+
+         `ベンチプレス: ${bench.join(', ') || '未入力'}\n`+
+         `ダンベルプレス: ${db.join(', ') || '未入力'}\n`+
+         `ペックフライ: ${fly.join(', ') || '未入力'}\n\n`+
+         `このデータを基に、ベンチプレス・ダンベルプレス・ペックフライの3種目で1週間(7日)のメニューを生成してください。`+
+         `各種目とも5セット構成とし、重量または回数がセットを追うごとに漸増し、RPM (またはRPE相当の強度指標) が少しずつ上がるようにしてください。`+
+         `JSON 形式で {\"day1\":{\"Bench Press\":[\"重量 x reps\",...],...}, ... } だけを返答してください。余計な説明文やコードブロックは不要です。`;
 }
 
 // ========== Menu Generation ==========
-function buildPrompt(){
-  const bw = document.getElementById('benchWeight').value;
-  const br = document.getElementById('benchReps').value;
-  const dw = document.getElementById('dbWeight').value;
-  const dr = document.getElementById('dbReps').value;
-  const fw = document.getElementById('flyWeight').value;
-  const fr = document.getElementById('flyReps').value;
-  return `以下の前回実績を参考に、1週間分の胸トレメニューを日本語で提案してください。JSON 形式で { \"day1\": [\"エクササイズ\"], ... } で返答してください。\n\nベンチプレス: ${bw} kg x ${br} reps\nダンベルプレス: ${dw} kg x ${dr} reps\nペックフライ: ${fw} kg x ${fr} reps`;
-}
-
 async function generatePlan(){
   togglePlanSection(false);
-  const key = sanitizeKey(document.getElementById('apiKeyInput').value);
+  const key=sanitizeKey(document.getElementById('apiKeyInput').value);
   if(!key){ alert('APIキーが設定されていません'); return; }
 
   const body={
     model: MODEL,
-    max_tokens: 512,
+    max_tokens: 700,
     temperature: 0.7,
     response_format:{type:'json_object'},
     messages:[
-      {role:'system', content:'You are a certified strength coach.'},
+      {role:'system', content:'You are a certified strength coach. Reply only with JSON.'},
       {role:'user', content: buildPrompt()}
     ]
   };
 
   try{
-    const res = await fetch(OPENAI_URL, {
-      method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'Authorization':'Bearer '+key
-      },
-      body: JSON.stringify(body)
-    });
-    if(!res.ok){
-      const txt = await res.text();
-      alert('生成失敗:\n'+txt);
-      return;
-    }
-    const data = await res.json();
-    const content = data.choices?.[0]?.message?.content;
-    document.getElementById('planText').textContent = content || JSON.stringify(data, null, 2);
+    const res=await fetch(OPENAI_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify(body)});
+    if(!res.ok){ const txt=await res.text(); alert('生成失敗:\n'+txt); return; }
+    const data=await res.json();
+    const content=data.choices?.[0]?.message?.content||'';
+    document.getElementById('planText').textContent=content||JSON.stringify(data,null,2);
     togglePlanSection(true);
-  }catch(err){
-    console.error(err);
-    alert('ネットワークまたはパースエラー: '+err.message);
-  }
+  }catch(err){ console.error(err); alert('ネットワークまたはパースエラー: '+err.message); }
 }
 
 // ========== Event Wiring ==========
-document.getElementById('saveKeyBtn').addEventListener('click', async ()=>{
-  const key = saveKey();
-  if(!key){ setStatus('❌ キーが空です', false); return; }
-  await testKey(key);
-});
-
-document.getElementById('generateBtn').addEventListener('click', generatePlan);
+document.getElementById('saveKeyBtn').addEventListener('click',async()=>{ const key=saveKey(); if(!key){setStatus('❌ キーが空です',false); return;} await testKey(key);} );
+document.getElementById('generateBtn').addEventListener('click',generatePlan);
 
 // On load
-(async ()=>{
-  const key = loadKey();
-  if(key){ await testKey(key); }
-})();
+a (async()=>{ const key=loadKey(); if(key){ await testKey(key);} })();
 </script>
 </body>
 </html>
