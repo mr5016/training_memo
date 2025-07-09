@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Workout Planner – OpenAI API版 (v1)</title>
+  <title>Workout Planner – OpenAI API版 (v2・ヘッダ文字対策)</title>
   <!-- Bootstrap & Chart.js -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -26,7 +26,7 @@
       <input id="apiKeyInput" type="password" class="form-control" placeholder="sk-···" />
       <button class="btn btn-outline-primary" onclick="saveKey()">保存</button>
     </div>
-    <small class="text-muted">キーはブラウザの LocalStorage のみで使用されます</small>
+    <small class="text-muted">キーはブラウザの LocalStorage のみで保存されます（改行や全角文字は除去されます）</small>
   </div>
 
   <!-- PROFILE FORM -->
@@ -43,8 +43,6 @@
 
   <!-- PLAN OUTPUT -->
   <div id="planContainer" class="mb-4"></div>
-  <!-- LOG SECTION -->
-  <div id="logContainer" class="mb-4"></div>
   <!-- CHART -->
   <canvas id="progressChart" height="120"></canvas>
 
@@ -57,19 +55,26 @@ const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 const MODEL = 'gpt-4o-mini';
 
 // ------------------ Key Handling ------------------
+function sanitizeKey(k){
+  // 全角・改行・スペースを除いて純ASCIIに
+  return (k||'').replace(/[^\x20-\x7E]/g,'').replace(/\s+/g,'');
+}
 function saveKey(){
-  const key = document.getElementById('apiKeyInput').value.trim();
+  const raw = document.getElementById('apiKeyInput').value;
+  const key = sanitizeKey(raw);
+  if(raw!==key){ showAlert('改行や全角文字を除去して保存しました','warning'); }
   localStorage.setItem('OPENAI_KEY', key);
+  document.getElementById('apiKeyInput').value = key;
   showAlert('APIキーを保存しました','success');
 }
-function getKey(){ return localStorage.getItem('OPENAI_KEY') || ''; }
+function getKey(){ return sanitizeKey(localStorage.getItem('OPENAI_KEY')||''); }
 
 // ------------------ On Load ------------------
 window.onload = () => {
   document.getElementById('apiKeyInput').value = getKey();
   if(location.protocol === 'file:'){
     const w=document.getElementById('fileWarn');
-    w.textContent = 'file:// で開いている場合、ネットワーク要求がブロックされることがあります。ターミナルで `python -m http.server 8000` を実行し、 http://localhost:8000 から開くことを推奨します。';
+    w.textContent = 'file:// で開いている場合、CORSにより fetch がブロックされることがあります。ターミナルで `python -m http.server 8000` を実行し、 http://localhost:8000 から開くことを推奨します。';
     w.classList.remove('d-none');
   }
   loadPlan();
@@ -91,6 +96,7 @@ function compress(obj, max=1200){
 async function callOpenAI(userContent){
   const apiKey = getKey();
   if(!apiKey){ showAlert('APIキーが設定されていません'); throw new Error('API key missing'); }
+
   const body = {
     model: MODEL,
     max_tokens: 512,
@@ -101,20 +107,23 @@ async function callOpenAI(userContent){
       { role:'user',   content: userContent }
     ]
   };
+
+  const headers = new Headers();
+  headers.set('Content-Type','application/json');
+  headers.set('Authorization','Bearer '+apiKey);
+
   try{
     const res = await fetch(OPENAI_ENDPOINT, {
       method:'POST',
-      headers:{
-        'content-type':'application/json',
-        'authorization':'Bearer '+apiKey
-      },
+      headers: headers,
       body: JSON.stringify(body)
     });
+
     if(!res.ok){ const txt = await res.text(); console.error('OpenAI error', txt); throw new Error(txt); }
     return res.json();
   }catch(err){
     console.error('Network error', err);
-    showAlert('通信エラー: fetch に失敗しました。<br>・ネット接続 / VPN<br>・APIキー誤り<br>・CORS (file:// → http 経由で再読み込み)<br>を確認してください。');
+    showAlert('通信エラー: fetch に失敗しました。<br>❶ ネット接続 / VPN<br>❷ APIキーに改行や全角文字が混入していないか<br>❸ ブラウザを http:// 経由で開いているか<br>を確認してください。');
     throw err;
   }
 }
