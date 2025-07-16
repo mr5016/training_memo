@@ -3,31 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Workout Planner – 曜日指定 & ビジュアルメニュー (v4 JSON安全パース)</title>
+  <title>Workout Planner – オフライン版 (数式自動生成)</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
   <style>
     body { padding-top: 3rem; }
-    #statusMsg { min-height: 2rem; }
     #planDisplay .card-header { background:#f5f5f5; }
   </style>
 </head>
 <body class="bg-light">
 <div class="container">
-  <h1 class="mb-4">🏋️‍♂️ Workout Planner – 曜日指定 & ビジュアルメニュー</h1>
-  <!-- API KEY -->
-  <div class="card mb-4">
-    <div class="card-header">1️⃣ OpenAI API キー</div>
-    <div class="card-body">
-      <div class="input-group">
-        <input id="apiKeyInput" type="text" class="form-control" placeholder="sk-..." />
-        <button id="saveKeyBtn" class="btn btn-primary">キー保存 & テスト</button>
-      </div>
-      <div id="statusMsg" class="mt-2"></div>
-    </div>
-  </div>
+  <h1 class="mb-4">🏋️‍♂️ Workout Planner – オフライン版</h1>
   <!-- LIFT & DAY INPUT -->
-  <div id="liftCard" class="card mb-4 d-none">
-    <div class="card-header">2️⃣ 前回の実績 & 曜日を入力</div>
+  <div id="liftCard" class="card mb-4">
+    <div class="card-header">1️⃣ 前回の実績 & 曜日を入力</div>
     <div class="card-body">
       <div class="mb-3">
         <label class="fw-bold">トレーニング曜日を選択 (複数可)</label>
@@ -60,37 +48,126 @@
   </div>
   <!-- PLAN OUTPUT -->
   <div id="planArea" class="card d-none">
-    <div class="card-header">3️⃣ 生成された 1 週間メニュー</div>
+    <div class="card-header">2️⃣ 生成された 1 週間メニュー</div>
     <div class="card-body" id="planDisplay"></div>
   </div>
 </div>
 <script>
-const MODEL='gpt-4o-mini';
-const OPENAI_URL='https://api.openai.com/v1/chat/completions';
-// === Key utils ===
-const sanitizeKey=k=>(k||'').replace(/[\s\u3000]+/g,'').replace(/[^\x00-\x7F]/g,'');
-const saveKey=()=>{const k=sanitizeKey(document.getElementById('apiKeyInput').value);localStorage.setItem('OPENAI_KEY',k);return k;};
-const loadKey=()=>{const k=localStorage.getItem('OPENAI_KEY')||'';document.getElementById('apiKeyInput').value=k;return k;};
+// === 外部データソース (RPE → %1RM テーブル)
+const RPE_CHART_URL = 'https://raw.githubusercontent.com/openai-examples/rpe-chart/main/rpe_chart.json';
+
 // === UI helper ===
-const setStatus=(html,ok=true)=>{const el=document.getElementById('statusMsg');el.className= ok?'text-success':'text-danger';el.innerHTML=html;}
-const toggle=(id,show)=>document.getElementById(id).classList.toggle('d-none',!show);
-// === Key test ===
-async function testKey(k){try{const res=await fetch('https://api.openai.com/v1/models',{headers:{'Authorization':'Bearer '+k}});if(!res.ok){setStatus('❌ 失敗:'+res.status,false);toggle('liftCard',false);return false;}setStatus('✔️ 有効です');toggle('liftCard',true);return true;}catch(e){setStatus('❌ '+e.message,false);toggle('liftCard',false);return false;}}
-// === Collect ===
-const collectSets=p=>{const arr=[];for(let i=1;i<=5;i++){const w=document.getElementById(p+'W'+i).value;const r=document.getElementById(p+'R'+i).value;if(w&&r) arr.push(`${w}kg x ${r}`);}return arr;};
-const collectDays=()=>[['Mon','月'],['Tue','火'],['Wed','水'],['Thu','木'],['Fri','金'],['Sat','土'],['Sun','日']].filter(([id])=>document.getElementById('chk'+id).checked).map(a=>a[1]);
-// === Prompt ===
-function buildPrompt(){const bench=collectSets('bench'),db=collectSets('db'),fly=collectSets('fly');const days=collectDays();const dayLine=days.length?`あなたがトレーニングする曜日は${days.join('、')}です。それ以外は休息日としてください。\n`:'';return `以下は前回の胸トレ実績です。\nベンチプレス: ${bench.join(', ')||'未入力'}\nダンベルプレス: ${db.join(', ')||'未入力'}\nペックフライ: ${fly.join(', ')||'未入力'}\n\n${dayLine}同じ3種目で各5セット構成、セットが進むごとに重量or回数が漸増しRPMまたはRPEが上がる1週間メニューを生成してください。JSON形式のみ {"day1":{"ベンチプレス":["重量 x rep"...],...},...}`;}
-// === safe JSON parse ===
-function safeParse(str){try{return JSON.parse(str);}catch{const m=str.match(/\{[\s\S]*\}/);if(m){try{return JSON.parse(m[0]);}catch{}}return null;}}
-// === Render ===
-function renderPlan(obj){const area=document.getElementById('planDisplay');area.innerHTML='';Object.keys(obj).forEach(day=>{const card=document.createElement('div');card.className='card mb-3';card.innerHTML=`<div class='card-header fw-bold'>${day}</div>`;const list=document.createElement('ul');list.className='list-group list-group-flush';for(const ex in obj[day]){const li=document.createElement('li');li.className='list-group-item';li.innerHTML=`<strong>${ex}</strong>: ${obj[day][ex].join(', ')}`;list.appendChild(li);}card.appendChild(list);area.appendChild(card);});}
-// === Generate ===
-async function generatePlan(){toggle('planArea',false);const key=sanitizeKey(document.getElementById('apiKeyInput').value);if(!key){alert('APIキー未設定');return;}const body={model:MODEL,max_tokens:800,temperature:0.7,response_format:{type:'json_object'},messages:[{role:'system',content:'You are a certified strength coach. Reply only with valid JSON.'},{role:'user',content:buildPrompt()}]};try{const res=await fetch(OPENAI_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify(body)});if(!res.ok){alert('生成失敗:'+res.status);return;}const data=await res.json();const txt=data.choices?.[0]?.message?.content||'';const plan=safeParse(txt);if(!plan){alert('JSON パース失敗');console.error(txt);return;}renderPlan(plan);toggle('planArea',true);}catch(e){alert('エラー:'+e.message);} }
-// === Events ===
-document.getElementById('saveKeyBtn').addEventListener('click',async()=>{const k=saveKey();if(!k){setStatus('❌ キーが空',false);return;}await testKey(k);});
-document.getElementById('generateBtn').addEventListener('click',generatePlan);
-(async()=>{const k=loadKey();if(k) await testKey(k);})();
+const toggle = (id, show) => document.getElementById(id).classList.toggle('d-none', !show);
+
+// === コレクション関数 ===
+const collectSets = p => {
+  const arr = [];
+  for (let i = 1; i <= 5; i++) {
+    const w = parseFloat(document.getElementById(p + 'W' + i).value);
+    const r = parseInt(document.getElementById(p + 'R' + i).value);
+    if (!isNaN(w) && !isNaN(r)) arr.push({ w, r });
+  }
+  return arr;
+};
+
+const collectDays = () =>
+  [['Mon', '月'], ['Tue', '火'], ['Wed', '水'], ['Thu', '木'], ['Fri', '金'], ['Sat', '土'], ['Sun', '日']]
+    .filter(([id]) => document.getElementById('chk' + id).checked)
+    .map(a => a[1]);
+
+// === 数式ユーティリティ ===
+const estimate1RM = (w, r) => w * (1 + r / 30); // Epley 公式
+const roundToHalf = v => Math.round(v * 2) / 2; // 0.5kg 刻み
+
+// === 外部サイトから RPE テーブル取得 ===
+async function fetchRPEChart() {
+  try {
+    const res = await fetch(RPE_CHART_URL);
+    if (!res.ok) throw new Error('fetch error');
+    return await res.json();
+  } catch (e) {
+    // フォールバック (代表値)
+    return {
+      "3": { "7": 0.88, "7.5": 0.89, "8": 0.91, "8.5": 0.93, "9": 0.95 },
+      "4": { "7": 0.85, "7.5": 0.87, "8": 0.88, "8.5": 0.90, "9": 0.92 },
+      "5": { "7": 0.82, "7.5": 0.84, "8": 0.86, "8.5": 0.88, "9": 0.90 },
+      "6": { "7": 0.79, "7.5": 0.81, "8": 0.83, "8.5": 0.85, "9": 0.87 },
+      "8": { "7": 0.72, "7.5": 0.74, "8": 0.76, "8.5": 0.78, "9": 0.80 }
+    };
+  }
+}
+
+// === レンダリング ===
+function renderPlan(obj) {
+  const area = document.getElementById('planDisplay');
+  area.innerHTML = '';
+  Object.keys(obj).forEach(day => {
+    const card = document.createElement('div');
+    card.className = 'card mb-3';
+    card.innerHTML = `<div class='card-header fw-bold'>${day}</div>`;
+    const list = document.createElement('ul');
+    list.className = 'list-group list-group-flush';
+    for (const ex in obj[day]) {
+      const li = document.createElement('li');
+      li.className = 'list-group-item';
+      li.innerHTML = `<strong>${ex}</strong>: ${obj[day][ex].join(', ')}`;
+      list.appendChild(li);
+    }
+    card.appendChild(list);
+    area.appendChild(card);
+  });
+}
+
+// === メニュー生成メイン ===
+async function generatePlan() {
+  toggle('planArea', false);
+  const days = collectDays();
+  if (!days.length) { alert('曜日を1つ以上選択してください'); return; }
+
+  const exercises = {
+    'ベンチプレス': collectSets('bench'),
+    'ダンベルプレス': collectSets('db'),
+    'ペックフライ': collectSets('fly')
+  };
+
+  if (Object.values(exercises).every(arr => arr.length === 0)) {
+    alert('最低1種目の実績を入力してください');
+    return;
+  }
+
+  const rpeChart = await fetchRPEChart();
+
+  const plan = {};
+  days.forEach((day, dIdx) => {
+    const title = `Day ${dIdx + 1}（${day}）`;
+    plan[title] = {};
+    Object.entries(exercises).forEach(([name, sets]) => {
+      if (!sets.length) return; // 未入力種目はスキップ
+      const best = sets.reduce((m, s) => (s.w > m.w ? s : m), sets[0]);
+      const est1RM = estimate1RM(best.w, best.r);
+      const repScheme = [8, 6, 5, 4, 3];
+      const setArr = repScheme.map((rep, i) => {
+        const rpe = (7 + i * 0.5).toFixed(1); // 7, 7.5, 8, 8.5, 9
+        let pct = rpeChart?.[rep]?.[rpe];
+        if (!pct) pct = 0.70 + i * 0.04; // フォールバック
+        pct += dIdx * 0.02; // 曜日が後ろほど +2% 重く
+        const weight = roundToHalf(est1RM * pct);
+        return `${weight}kg x ${rep}`;
+      });
+      plan[title][name] = setArr;
+    });
+  });
+
+  renderPlan(plan);
+  toggle('planArea', true);
+}
+
+// === イベント ===
+Document.addEventListener ? document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('generateBtn').addEventListener('click', generatePlan);
+}) : window.onload = () => {
+  document.getElementById('generateBtn').addEventListener('click', generatePlan);
+};
 </script>
 </body>
 </html>
