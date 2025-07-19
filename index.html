@@ -27,18 +27,18 @@
 
   <!-- ================ PAGE : PLANNER ================ -->
   <div id="pagePlanner">
-    <h1 class="mb-4">🏋️‍♂️ Workout Planner – 週別保存 & 1日入力</h1>
+    <h1 class="mb-4">🏋️‍♂️ Workout Planner – 週次保存 & 1日入力</h1>
 
-    <!-- WEEK NAVIGATION -->
-    <div class="d-flex justify-content-between align-items-center mb-2">
-      <button id="prevWeekBtn" class="btn btn-outline-secondary btn-sm">◀ 前の週</button>
-      <h4 class="m-0"><span id="weekRangeLabel"></span></h4>
-      <button id="nextWeekBtn" class="btn btn-outline-secondary btn-sm">次の週 ▶</button>
-    </div>
-
-    <!-- DAY CATEGORY SELECT -->
+    <!-- DAY CATEGORY SELECT + WEEK NAVIGATION -->
     <div id="dayCatCard" class="card mb-4">
-      <div class="card-header">1️⃣ 各曜日のカテゴリを選択し、入力する曜日をクリック <small class="text-muted ms-2">(⭐=今日)</small></div>
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <div>1️⃣ 今週の各曜日カテゴリを選択し、入力する曜日をクリック <small class="text-muted ms-2">(⭐=今日)</small></div>
+        <div>
+          <button class="btn btn-outline-secondary btn-sm me-2" id="prevWeekBtn">◀ 前の週</button>
+          <span id="weekLabel" class="fw-bold"></span>
+          <button class="btn btn-outline-secondary btn-sm ms-2" id="nextWeekBtn">次の週 ▶</button>
+        </div>
+      </div>
       <div class="card-body" id="daySelect"></div>
     </div>
 
@@ -88,44 +88,43 @@ const CATEGORY_EXERCISES={
   arms:[{prefix:'ez',name:'EZバーカール'},{prefix:'inc',name:'インクラインカール'},{prefix:'lie',name:'ライイングエクステンション'},{prefix:'pd',name:'プレスダウン'}],
   back:[{prefix:'chin',name:'チンニング'},{prefix:'dl',name:'デッドリフト'},{prefix:'bor',name:'ベントオーバーロー'},{prefix:'dbr',name:'ダンベルロー'}]
 };
-const BASE_STORAGE_KEY_PLAN='wkPlannerWeekV1'; // 週別キーを生成
+const STORAGE_KEY_PLAN='wkPlannerWeekV1'; // 週ごとに key が動的に変わる
 const STORAGE_KEY_HIST='wkPlannerHistV1';
 const CATS=['chest','legs','arms','back'];
 
 // ========== STATE ==========
-let weekOffset=0;               // 0=今週, -1=前の週, +1=次の週
-let weekStart;                  // yyyy-mm-dd (月曜)
-let planState;                  // {weekStart, dayCats[7], setsByDay[7]}
-let editingDayIdx=null;         // 0‑6
+let planState; // {weekStart, dayCats[7], setsByDay[7]}
+let editingDayIdx=null; // 0‑6
 let chartInstance=null;
+let currentWeekStartStr; // yyyy-mm-dd (月曜)
 
 // ========== HELPERS ==========
 const round05=v=>Math.round(v*2)/2;
 const estimate1RM=(w,r)=>w*(1+r/30);
-function formatDate(d){return `${d.getMonth()+1}/${d.getDate()}`;}
-function isSameDate(d1,d2){return d1.getFullYear()===d2.getFullYear() && d1.getMonth()===d2.getMonth() && d1.getDate()===d2.getDate();}
-// 指定週(月曜始まり) の yyyy-mm-dd 文字列
-function getWeekStart(offset=0){
+// 任意の週(月曜始まり) の yyyy-mm-dd 文字列を返す (offsetWeeks: 0=今週, -1=先週, +1=来週)
+function getWeekStart(offsetWeeks=0){
   const today=new Date();
-  today.setHours(0,0,0,0);
-  // 今日の月曜を基準に offset 週ずらす
-  const day=today.getDay(); // 0–6 日曜=0
-  const diff=today.getDate()-day+(day===0?-6:1)+offset*7; // 月曜
+  const day=today.getDay();
+  const diff=today.getDate()-day+(day===0?-6:1)+offsetWeeks*7; // 月曜
   const mon=new Date(today.setDate(diff));
+  mon.setHours(0,0,0,0);
   return mon.toISOString().slice(0,10);
 }
-function storageKey(weekStart){return `${BASE_STORAGE_KEY_PLAN}_${weekStart}`;}
+
+// storage key generator per‑week
+const keyForWeek=ws=>`${STORAGE_KEY_PLAN}_${ws}`;
 
 // ========== PLAN STATE LOAD/SAVE (week scoped) ==========
-function defaultPlanState(start){return{weekStart:start,dayCats:Array(7).fill('off'),setsByDay:Array(7).fill({})};}
-function loadPlanState(start){
+function defaultPlanState(ws){return{weekStart:ws,dayCats:Array(7).fill('off'),setsByDay:Array(7).fill({})};}
+function loadPlanState(ws){
   try{
-    const ps=JSON.parse(localStorage.getItem(storageKey(start))||'null');
-    if(ps && ps.weekStart===start) return ps;
+    const ps=JSON.parse(localStorage.getItem(keyForWeek(ws))||'null');
+    if(ps && ps.weekStart===ws) return ps;
   }catch{}
-  return defaultPlanState(start);
+  localStorage.removeItem(keyForWeek(ws));
+  return defaultPlanState(ws);
 }
-function savePlanState(){localStorage.setItem(storageKey(weekStart),JSON.stringify(planState));}
+function savePlanState(){localStorage.setItem(keyForWeek(currentWeekStartStr),JSON.stringify(planState));}
 
 // ========== BUILD EXERCISE TABLES ==========
 function buildTable(containerId,prefix,title){
@@ -153,15 +152,20 @@ Object.entries(CATEGORY_EXERCISES).forEach(([cat,arr])=>{
 function buildDayRows(){
   const wrap=document.getElementById('daySelect');
   wrap.innerHTML='';
-  const today=new Date();
+  const base=new Date(currentWeekStartStr);
+  const todayStr=new Date().toISOString().slice(0,10);
   DAYS.forEach((d,idx)=>{
-    const dayDate=new Date(weekStart);
-    dayDate.setDate(dayDate.getDate()+idx);
-
     const row=document.createElement('div');
     row.className='d-flex align-items-center mb-2 day-row';
     row.dataset.idx=idx;
-    row.innerHTML=`<span class='me-2 ${isSameDate(dayDate,today)?'today-row':''}' style='width:5rem;'>${d.jp} (${formatDate(dayDate)})</span>`;
+
+    // 日付ラベル
+    const dateObj=new Date(base);
+    dateObj.setDate(dateObj.getDate()+idx);
+    const dateStr=`${dateObj.getMonth()+1}/${dateObj.getDate()}`;
+    const isToday=dateObj.toISOString().slice(0,10)===todayStr;
+
+    row.innerHTML=`<span class='me-2 ${isToday?'today-row':''}' style='width:5.5rem;'>${d.jp} ${dateStr}${isToday?' ⭐':''}</span>`;
 
     const sel=document.createElement('select');
     sel.id='sel'+d.id;
@@ -178,6 +182,8 @@ function buildDayRows(){
     row.addEventListener('click',()=>setEditingDay(idx));
     wrap.appendChild(row);
   });
+  // week label
+  document.getElementById('weekLabel').innerText=`${currentWeekStartStr} 週`;
 }
 
 // ========== SECTION VISIBILITY / INPUT LOAD ==========
@@ -201,7 +207,6 @@ function loadInputsFromState(){
   clearInputs();
   const data=planState.setsByDay[editingDayIdx]||{};
   Object.entries(data).forEach(([prefix,arr])=>{
-    if(prefix==='_date')return;
     arr.forEach((s,i)=>{
       if(i<5){
         document.getElementById(`${prefix}W${i+1}`).value=s.w;
@@ -215,12 +220,8 @@ function setEditingDay(idx){
   editingDayIdx=idx;
   document.querySelectorAll('.day-row').forEach(r=>r.classList.remove('editing-row'));
   document.querySelector(`.day-row[data-idx='${idx}']`).classList.add('editing-row');
-
-  const dayDate=new Date(weekStart);
-  dayDate.setDate(dayDate.getDate()+idx);
-
   document.getElementById('liftCard').classList.remove('d-none');
-  document.getElementById('editDayLabel').innerText=`${DAYS[idx].jp} (${formatDate(dayDate)}) [${planState.dayCats[idx]==='off'?'オフ':'カテゴリ: '+planState.dayCats[idx]}]`;
+  document.getElementById('editDayLabel').innerText=`${DAYS[idx].jp} (${planState.dayCats[idx]==='off'?'オフ':'カテゴリ: '+planState.dayCats[idx]})`;
   updateSectionVisibility(planState.dayCats[idx]);
   loadInputsFromState();
 }
@@ -239,18 +240,30 @@ function saveDayData(){
   if(editingDayIdx===null) return;
   const cat=planState.dayCats[editingDayIdx];
   if(cat==='off') return alert('この日はオフに設定されています');
-
-  const dayDate=new Date(weekStart);
-  dayDate.setDate(dayDate.getDate()+editingDayIdx);
-  const dayDateStr=dayDate.toISOString().slice(0,10);
-
-  const dayData={_date:dayDateStr};
+  const dayData={};
   CATEGORY_EXERCISES[cat].forEach(ex=>{
     const s=collectSets(ex.prefix);
     if(s.length) dayData[ex.prefix]=s;
   });
   planState.setsByDay[editingDayIdx]=dayData;
   savePlanState();
+
+  // ======== ★★★ Stats 用に平均 1RM を記録する ★★★
+  let sumRM=0,countRM=0;
+  for(const exPrefix in dayData){
+    dayData[exPrefix].forEach(s=>{
+      sumRM+=estimate1RM(s.w,s.r);
+      countRM++;
+    });
+  }
+  if(countRM){
+    const avgRM=Math.round(sumRM/countRM);
+    const dayDate=new Date(planState.weekStart);
+    dayDate.setDate(dayDate.getDate()+editingDayIdx);
+    const dateStr=dayDate.toISOString().slice(0,10);
+    pushHistory(cat,avgRM,dateStr);
+  }
+
   alert('保存しました');
 }
 
@@ -279,7 +292,6 @@ function generatePlan(){
     if(cat==='off') return;
     const dayData=planState.setsByDay[idx]||{};
     if(!Object.keys(dayData).length) return; // no data
-
     const out={};
     CATEGORY_EXERCISES[cat].forEach(ex=>{
       const sets=dayData[ex.prefix];
@@ -292,13 +304,10 @@ function generatePlan(){
       });
       out[ex.name]=modSets;
     });
-
-    const labelDate=new Date(dayData._date||weekStart);
-    labelDate.setDate(labelDate.getDate());
-    plan[`${d.jp} (${formatDate(labelDate)})`]=out;
+    plan[`Day ${idx+1} (${d.jp})`]=out;
     progCount[cat]++;
   });
-  if(!Object.keys(plan).length) return alert('この週のデータが不足しています');
+  if(!Object.keys(plan).length) return alert('今週のデータが不足しています');
   renderPlan(plan);
   document.getElementById('planArea').classList.remove('d-none');
 }
@@ -307,7 +316,10 @@ function generatePlan(){
 function pushHistory(cat,rm,dateStr){
   const hist=JSON.parse(localStorage.getItem(STORAGE_KEY_HIST)||'{}');
   if(!hist[cat]) hist[cat]=[];
-  hist[cat].push({date:dateStr,rm});
+  // 重複チェック (日付が同じなら上書き)
+  const existing=hist[cat].find(h=>h.date===dateStr);
+  if(existing){existing.rm=rm;}else{hist[cat].push({date:dateStr,rm});}
+  hist[cat].sort((a,b)=>new Date(a.date)-new Date(b.date));
   localStorage.setItem(STORAGE_KEY_HIST,JSON.stringify(hist));
 }
 function showStats(cat){
@@ -317,7 +329,7 @@ function showStats(cat){
   document.getElementById('statsCatLabel').innerText={'chest':'胸','legs':'足','arms':'腕','back':'背中'}[cat];
   const ctx=document.getElementById('statsChart').getContext('2d');
   if(chartInstance) chartInstance.destroy();
-  chartInstance=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'平均1RM',data}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false}}}});
+  chartInstance=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'平均1RM',data,fill:false,borderWidth:2}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false}}}});
 }
 let currentCatIdx=0;
 function switchPage(toStats){
@@ -329,24 +341,19 @@ function switchPage(toStats){
 }
 
 // ========== WEEK NAVIGATION ==========
-function updateWeekRangeLabel(){
-  const start=new Date(weekStart);
-  const end=new Date(weekStart); end.setDate(end.getDate()+6);
-  document.getElementById('weekRangeLabel').innerText=`${start.getFullYear()}年 ${formatDate(start)} - ${formatDate(end)}`;
-}
-function changeWeek(offset){
-  weekOffset+=offset;
-  weekStart=getWeekStart(weekOffset);
-  planState=loadPlanState(weekStart);
+let weekOffset=0; // 0=今週
+function changeWeek(delta){
+  weekOffset+=delta;
+  currentWeekStartStr=getWeekStart(weekOffset);
+  planState=loadPlanState(currentWeekStartStr);
   buildDayRows();
-  updateWeekRangeLabel();
-  editingDayIdx=null;
-  document.getElementById('liftCard').classList.add('d-none');
-  document.getElementById('planArea').classList.add('d-none');
+  // デフォルトで月曜日を選択
+  setEditingDay(0);
 }
 
 // ========== EVENT LISTENERS ==========
 document.getElementById('saveDayBtn').addEventListener('click',saveDayData);
+document.getElementById('generateBtn')?.addEventListener('click',generatePlan);
 document.getElementById('linkPlanner').addEventListener('click',e=>{e.preventDefault();switchPage(false);});
 document.getElementById('linkStats').addEventListener('click',e=>{e.preventDefault();switchPage(true);});
 document.getElementById('backToPlanner').addEventListener('click',()=>switchPage(false));
@@ -357,15 +364,12 @@ document.getElementById('nextWeekBtn').addEventListener('click',()=>changeWeek(1
 
 // ========== INIT ==========
 function init(){
-  weekStart=getWeekStart();
-  planState=loadPlanState(weekStart);
+  currentWeekStartStr=getWeekStart(weekOffset);
+  planState=loadPlanState(currentWeekStartStr);
   buildDayRows();
-  updateWeekRangeLabel();
-  // auto-select today if in current week
-  if(weekOffset===0){
-    const todayIdx=new Date().getDay();
-    setEditingDay(todayIdx);
-  }
+  // set today editing if this week, otherwise Monday
+  const todayIdx=(new Date().toISOString().slice(0,10).startsWith(currentWeekStartStr))?new Date().getDay():0;
+  setEditingDay(todayIdx);
 }
 init();
 </script>
