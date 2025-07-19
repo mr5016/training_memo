@@ -32,7 +32,7 @@
     <!-- DAY CATEGORY SELECT + WEEK NAVIGATION -->
     <div id="dayCatCard" class="card mb-4">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <div>1️⃣ 今週の各曜日カテゴリを選択し、入力する曜日をクリック <small class="text-muted ms-2">(⭐=今日)</small></div>
+        <div>1️⃣ 今週の各曜日カテゴリを選択し、入力する曜日をクリック <small class="text-muted ms-2">(⭐ = 今日)</small></div>
         <div>
           <button class="btn btn-outline-secondary btn-sm me-2" id="prevWeekBtn">◀ 前の週</button>
           <span id="weekLabel" class="fw-bold"></span>
@@ -88,43 +88,43 @@ const CATEGORY_EXERCISES={
   arms:[{prefix:'ez',name:'EZバーカール'},{prefix:'inc',name:'インクラインカール'},{prefix:'lie',name:'ライイングエクステンション'},{prefix:'pd',name:'プレスダウン'}],
   back:[{prefix:'chin',name:'チンニング'},{prefix:'dl',name:'デッドリフト'},{prefix:'bor',name:'ベントオーバーロー'},{prefix:'dbr',name:'ダンベルロー'}]
 };
-const STORAGE_KEY_PLAN='wkPlannerWeekV1'; // 週ごとに key が動的に変わる
 const STORAGE_KEY_HIST='wkPlannerHistV1';
 const CATS=['chest','legs','arms','back'];
 
 // ========== STATE ==========
 let planState; // {weekStart, dayCats[7], setsByDay[7]}
-let editingDayIdx=null; // 0‑6
+let editingDayIdx=null; // 0‑6 (Sun=0)
 let chartInstance=null;
-let currentWeekStartStr; // yyyy-mm-dd (月曜)
+let weekOffset=0; // 0=今週, -1=先週, +1=来週
 
-// ========== HELPERS ==========
+// ========== HELPER FUNCTIONS ==========
 const round05=v=>Math.round(v*2)/2;
 const estimate1RM=(w,r)=>w*(1+r/30);
-// 任意の週(月曜始まり) の yyyy-mm-dd 文字列を返す (offsetWeeks: 0=今週, -1=先週, +1=来週)
+
+// 月曜の日付(yyyy-mm-dd) を取得 (offsetWeeks: 0=今週)
 function getWeekStart(offsetWeeks=0){
-  const today=new Date();
-  const day=today.getDay();
-  const diff=today.getDate()-day+(day===0?-6:1)+offsetWeeks*7; // 月曜
-  const mon=new Date(today.setDate(diff));
+  const now=new Date();
+  const day=now.getDay();
+  const diff=now.getDate()-day+(day===0?-6:1)+offsetWeeks*7;
+  const mon=new Date(now.setDate(diff));
   mon.setHours(0,0,0,0);
   return mon.toISOString().slice(0,10);
 }
 
-// storage key generator per‑week
-const keyForWeek=ws=>`${STORAGE_KEY_PLAN}_${ws}`;
+// week‑specific storage key
+const keyForWeek=ws=>`wkPlannerWeekV1_${ws}`;
 
-// ========== PLAN STATE LOAD/SAVE (week scoped) ==========
 function defaultPlanState(ws){return{weekStart:ws,dayCats:Array(7).fill('off'),setsByDay:Array(7).fill({})};}
 function loadPlanState(ws){
   try{
     const ps=JSON.parse(localStorage.getItem(keyForWeek(ws))||'null');
     if(ps && ps.weekStart===ws) return ps;
   }catch{}
-  localStorage.removeItem(keyForWeek(ws));
   return defaultPlanState(ws);
 }
-function savePlanState(){localStorage.setItem(keyForWeek(currentWeekStartStr),JSON.stringify(planState));}
+function savePlanState(){
+  localStorage.setItem(keyForWeek(planState.weekStart),JSON.stringify(planState));
+}
 
 // ========== BUILD EXERCISE TABLES ==========
 function buildTable(containerId,prefix,title){
@@ -137,7 +137,7 @@ function buildTable(containerId,prefix,title){
       <tbody>
         ${Array.from({length:5}).map((_,i)=>`<tr>
           <td><input id='${prefix}W${i+1}' type='number' class='form-control' step='0.5' min='0'></td>
-          <td><input id='${prefix}R${i+1}' type='number' class='form-control' step='1' min='1'></td>
+          <td><input id='${prefix}R${i+1}' type='number' class='form-control' step='1' min='0'></td>
         </tr>`).join('')}
       </tbody>
     </table>`;
@@ -148,24 +148,25 @@ Object.entries(CATEGORY_EXERCISES).forEach(([cat,arr])=>{
   arr.forEach(ex=>buildTable(containerId,ex.prefix,ex.name));
 });
 
-// ========== BUILD DAY SELECTOR ==========
+// ========== DAY SELECTOR ==========
 function buildDayRows(){
   const wrap=document.getElementById('daySelect');
   wrap.innerHTML='';
-  const base=new Date(currentWeekStartStr);
+
+  const weekStartDate=new Date(planState.weekStart);
   const todayStr=new Date().toISOString().slice(0,10);
+
   DAYS.forEach((d,idx)=>{
+    const dateObj=new Date(weekStartDate);
+    dateObj.setDate(dateObj.getDate()+idx);
+    const dateStr=`${dateObj.getMonth()+1}/${dateObj.getDate()}`;
+    const isoStr=dateObj.toISOString().slice(0,10);
+    const isToday=isoStr===todayStr;
+
     const row=document.createElement('div');
     row.className='d-flex align-items-center mb-2 day-row';
     row.dataset.idx=idx;
-
-    // 日付ラベル
-    const dateObj=new Date(base);
-    dateObj.setDate(dateObj.getDate()+idx);
-    const dateStr=`${dateObj.getMonth()+1}/${dateObj.getDate()}`;
-    const isToday=dateObj.toISOString().slice(0,10)===todayStr;
-
-    row.innerHTML=`<span class='me-2 ${isToday?'today-row':''}' style='width:5.5rem;'>${d.jp} ${dateStr}${isToday?' ⭐':''}</span>`;
+    row.innerHTML=`<span class='me-2 ${isToday?'today-row':''}' style='width:6.5rem;'>${d.jp} ${dateStr}${isToday?' ⭐':''}</span>`;
 
     const sel=document.createElement('select');
     sel.id='sel'+d.id;
@@ -178,12 +179,17 @@ function buildDayRows(){
       savePlanState();
       if(editingDayIdx===idx) updateSectionVisibility(sel.value);
     });
+
     row.appendChild(sel);
     row.addEventListener('click',()=>setEditingDay(idx));
     wrap.appendChild(row);
   });
-  // week label
-  document.getElementById('weekLabel').innerText=`${currentWeekStartStr} 週`;
+
+  // 週ラベル
+  const ws=new Date(planState.weekStart);
+  const we=new Date(ws);
+  we.setDate(we.getDate()+6);
+  document.getElementById('weekLabel').innerText=`${ws.getMonth()+1}/${ws.getDate()} - ${we.getMonth()+1}/${we.getDate()}`;
 }
 
 // ========== SECTION VISIBILITY / INPUT LOAD ==========
@@ -195,6 +201,7 @@ function updateSectionVisibility(cat){
     document.getElementById(`secWrap${cat.charAt(0).toUpperCase()+cat.slice(1)}`).classList.remove('d-none');
   }
 }
+
 function clearInputs(){
   Object.values(CATEGORY_EXERCISES).flat().forEach(ex=>{
     for(let i=1;i<=5;i++){
@@ -203,9 +210,41 @@ function clearInputs(){
     }
   });
 }
+
+// Find last sets for given category before current date
+function findPreviousSets(cat){
+  // Search current week earlier days
+  for(let i=editingDayIdx-1;i>=0;i--){
+    const data=planState.setsByDay[i]||{};
+    const exPrefixes=CATEGORY_EXERCISES[cat].map(e=>e.prefix);
+    if(Object.keys(data).some(k=>exPrefixes.includes(k))) return data;
+  }
+  // Search past weeks up to 12 weeks back
+  for(let w=-1;w>=-12;w--){
+    const ws=getWeekStart(weekOffset+w);
+    const ps=loadPlanState(ws);
+    for(let i=6;i>=0;i--){
+      const data=ps.setsByDay[i]||{};
+      const exPrefixes=CATEGORY_EXERCISES[cat].map(e=>e.prefix);
+      if(Object.keys(data).some(k=>exPrefixes.includes(k))) return data;
+    }
+  }
+  return null;
+}
+
 function loadInputsFromState(){
   clearInputs();
-  const data=planState.setsByDay[editingDayIdx]||{};
+  const cat=planState.dayCats[editingDayIdx];
+  if(cat==='off') return;
+
+  let data=planState.setsByDay[editingDayIdx]||{};
+
+  // If no current data, try previous
+  if(Object.keys(data).length===0){
+    const prev=findPreviousSets(cat);
+    if(prev) data=prev;
+  }
+
   Object.entries(data).forEach(([prefix,arr])=>{
     arr.forEach((s,i)=>{
       if(i<5){
@@ -214,6 +253,16 @@ function loadInputsFromState(){
       }
     });
   });
+
+  // Fill blanks with 0
+  Object.values(CATEGORY_EXERCISES[cat]).forEach(ex=>{
+    for(let i=1;i<=5;i++){
+      const wInput=document.getElementById(`${ex.prefix}W${i}`);
+      const rInput=document.getElementById(`${ex.prefix}R${i}`);
+      if(wInput.value==='') wInput.value='0';
+      if(rInput.value==='') rInput.value='0';
+    }
+  });
 }
 
 function setEditingDay(idx){
@@ -221,7 +270,12 @@ function setEditingDay(idx){
   document.querySelectorAll('.day-row').forEach(r=>r.classList.remove('editing-row'));
   document.querySelector(`.day-row[data-idx='${idx}']`).classList.add('editing-row');
   document.getElementById('liftCard').classList.remove('d-none');
-  document.getElementById('editDayLabel').innerText=`${DAYS[idx].jp} (${planState.dayCats[idx]==='off'?'オフ':'カテゴリ: '+planState.dayCats[idx]})`;
+
+  const dateObj=new Date(planState.weekStart);
+  dateObj.setDate(dateObj.getDate()+idx);
+  const dateLabel=`${DAYS[idx].jp} (${dateObj.getMonth()+1}/${dateObj.getDate()})`;
+  document.getElementById('editDayLabel').innerText=`${dateLabel} – カテゴリ: ${planState.dayCats[idx]==='off'?'オフ':planState.dayCats[idx]}`;
+
   updateSectionVisibility(planState.dayCats[idx]);
   loadInputsFromState();
 }
@@ -232,106 +286,60 @@ function collectSets(prefix){
   for(let i=1;i<=5;i++){
     const w=parseFloat(document.getElementById(`${prefix}W${i}`).value);
     const r=parseInt(document.getElementById(`${prefix}R${i}`).value);
-    if(!isNaN(w)&&!isNaN(r)) arr.push({w,r});
+    if(!isNaN(w)&&w>0 && !isNaN(r)&&r>0) arr.push({w,r});
   }
   return arr;
 }
+
+function pushHistory(cat,totalRM,dateStr){
+  const hist=JSON.parse(localStorage.getItem(STORAGE_KEY_HIST)||'{}');
+  if(!hist[cat]) hist[cat]=[];
+  hist[cat].push({date:dateStr,rm:totalRM});
+  localStorage.setItem(STORAGE_KEY_HIST,JSON.stringify(hist));
+}
+
 function saveDayData(){
   if(editingDayIdx===null) return;
   const cat=planState.dayCats[editingDayIdx];
   if(cat==='off') return alert('この日はオフに設定されています');
+
   const dayData={};
+  let totalRM=0;
   CATEGORY_EXERCISES[cat].forEach(ex=>{
-    const s=collectSets(ex.prefix);
-    if(s.length) dayData[ex.prefix]=s;
+    const sets=collectSets(ex.prefix);
+    if(sets.length){
+      dayData[ex.prefix]=sets;
+      // 1RM 合計
+      sets.forEach(s=>{ totalRM+=estimate1RM(s.w,s.r); });
+    }
   });
+
   planState.setsByDay[editingDayIdx]=dayData;
   savePlanState();
 
-  // ======== ★★★ Stats 用に平均 1RM を記録する ★★★
-  let sumRM=0,countRM=0;
-  for(const exPrefix in dayData){
-    dayData[exPrefix].forEach(s=>{
-      sumRM+=estimate1RM(s.w,s.r);
-      countRM++;
-    });
-  }
-  if(countRM){
-    const avgRM=Math.round(sumRM/countRM);
-    const dayDate=new Date(planState.weekStart);
-    dayDate.setDate(dayDate.getDate()+editingDayIdx);
-    const dateStr=dayDate.toISOString().slice(0,10);
-    pushHistory(cat,avgRM,dateStr);
-  }
+  // push to history with date string (曜日の日付)
+  const dateObj=new Date(planState.weekStart);
+  dateObj.setDate(dateObj.getDate()+editingDayIdx);
+  const iso=dateObj.toISOString().slice(0,10);
+  pushHistory(cat,Math.round(totalRM),iso);
 
   alert('保存しました');
 }
 
-// ========== PLAN GENERATION ==========
-function renderPlan(plan){
-  const area=document.getElementById('planDisplay');
-  area.innerHTML='';
-  Object.keys(plan).forEach(day=>{
-    const card=document.createElement('div');card.className='card mb-3';
-    card.innerHTML=`<div class='card-header fw-bold'>${day}</div>`;
-    const list=document.createElement('ul');list.className='list-group list-group-flush';
-    for(const ex in plan[day]){
-      const li=document.createElement('li');li.className='list-group-item';
-      li.innerHTML=`<strong>${ex}</strong>: ${plan[day][ex].join(', ')}`;
-      list.appendChild(li);
-    }
-    card.appendChild(list);
-    area.appendChild(card);
-  });
-}
-function generatePlan(){
-  const progCount={chest:0,legs:0,arms:0,back:0};
-  const plan={};
-  DAYS.forEach((d,idx)=>{
-    const cat=planState.dayCats[idx];
-    if(cat==='off') return;
-    const dayData=planState.setsByDay[idx]||{};
-    if(!Object.keys(dayData).length) return; // no data
-    const out={};
-    CATEGORY_EXERCISES[cat].forEach(ex=>{
-      const sets=dayData[ex.prefix];
-      if(!sets) return;
-      const modSets=sets.map(s=>{
-        const estRM=estimate1RM(s.w,s.r);
-        const newRM=estRM+2.5*progCount[cat];
-        const newW=round05(newRM/(1+s.r/30));
-        return `${newW}kg x ${s.r}`;
-      });
-      out[ex.name]=modSets;
-    });
-    plan[`Day ${idx+1} (${d.jp})`]=out;
-    progCount[cat]++;
-  });
-  if(!Object.keys(plan).length) return alert('今週のデータが不足しています');
-  renderPlan(plan);
-  document.getElementById('planArea').classList.remove('d-none');
-}
-
-// ========== HISTORY & STATS ==========
-function pushHistory(cat,rm,dateStr){
-  const hist=JSON.parse(localStorage.getItem(STORAGE_KEY_HIST)||'{}');
-  if(!hist[cat]) hist[cat]=[];
-  // 重複チェック (日付が同じなら上書き)
-  const existing=hist[cat].find(h=>h.date===dateStr);
-  if(existing){existing.rm=rm;}else{hist[cat].push({date:dateStr,rm});}
-  hist[cat].sort((a,b)=>new Date(a.date)-new Date(b.date));
-  localStorage.setItem(STORAGE_KEY_HIST,JSON.stringify(hist));
-}
+// ========== STATS ==========
 function showStats(cat){
   const hist=JSON.parse(localStorage.getItem(STORAGE_KEY_HIST)||'{}')[cat]||[];
   const labels=hist.map(h=>h.date);
   const data=hist.map(h=>h.rm);
-  document.getElementById('statsCatLabel').innerText={'chest':'胸','legs':'足','arms':'腕','back':'背中'}[cat];
+
+  document.getElementById('statsCatLabel').innerText={chest:'胸',legs:'足',arms:'腕',back:'背中'}[cat];
+
   const ctx=document.getElementById('statsChart').getContext('2d');
   if(chartInstance) chartInstance.destroy();
-  chartInstance=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'平均1RM',data,fill:false,borderWidth:2}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false}}}});
+  chartInstance=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'合計1RM',data}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
 }
 let currentCatIdx=0;
+
 function switchPage(toStats){
   document.getElementById('pagePlanner').classList.toggle('d-none',toStats);
   document.getElementById('pageStats').classList.toggle('d-none',!toStats);
@@ -340,17 +348,7 @@ function switchPage(toStats){
   if(toStats) showStats(CATS[currentCatIdx]);
 }
 
-// ========== WEEK NAVIGATION ==========
-let weekOffset=0; // 0=今週
-function changeWeek(delta){
-  weekOffset+=delta;
-  currentWeekStartStr=getWeekStart(weekOffset);
-  planState=loadPlanState(currentWeekStartStr);
-  buildDayRows();
-  // デフォルトで月曜日を選択
-  setEditingDay(0);
-}
-
+// ========== EVENT LISTENERS ==========
 // ========== EVENT LISTENERS ==========
 document.getElementById('saveDayBtn').addEventListener('click',saveDayData);
 document.getElementById('generateBtn')?.addEventListener('click',generatePlan);
