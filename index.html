@@ -3,285 +3,293 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Workout Planner – オフライン版 (保存機能付き)</title>
+  <title>Workout Planner – 保存 & 進捗グラフ</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <!-- Chart.js for progress graphs -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
-    body { padding-top: 3rem; }
-    #planDisplay .card-header { background:#f5f5f5; }
-    .exercise-section { border:1px solid #dee2e6; border-radius:.5rem; padding:1rem; margin-bottom:1.5rem; }
+    body{padding-top:3rem}
+    #planDisplay .card-header{background:#f5f5f5}
+    .exercise-section{border:1px solid #dee2e6;border-radius:.5rem;padding:1rem;margin-bottom:1.5rem}
+    .today-row{background:#fff3cd;border-radius:.25rem;padding:.1rem .4rem}
   </style>
 </head>
 <body class="bg-light">
 <div class="container">
-  <h1 class="mb-4">🏋️‍♂️ Workout Planner – カテゴリ別進行 + 保存</h1>
+  <!-- Top Navigation -->
+  <nav class="mb-3">
+    <ul class="nav nav-pills">
+      <li class="nav-item"><a class="nav-link active" href="#" id="linkPlanner">プラン作成</a></li>
+      <li class="nav-item"><a class="nav-link" href="#" id="linkStats">統計</a></li>
+    </ul>
+  </nav>
 
-  <!-- DAY CATEGORY SELECT -->
-  <div id="dayCatCard" class="card mb-4">
-    <div class="card-header">1️⃣ 各曜日のカテゴリを選択</div>
-    <div class="card-body" id="daySelect"></div>
-  </div>
+  <!-- ================= PAGE : PLANNER ================= -->
+  <div id="pagePlanner">
+    <h1 class="mb-4">🏋️‍♂️ Workout Planner – カテゴリ別進行 + グラフ</h1>
 
-  <!-- PREVIOUS SETS INPUT -->
-  <div id="liftCard" class="card mb-4">
-    <div class="card-header">2️⃣ 前回の実績を入力</div>
-    <div class="card-body">
-
-      <!-- Chest -->
-      <div class="exercise-section">
-        <h4 class="fw-bold mb-3">胸 (Chest)</h4>
-        <div class="row g-4" id="secChest"></div>
-      </div>
-
-      <!-- Legs -->
-      <div class="exercise-section">
-        <h4 class="fw-bold mb-3">足 (Legs)</h4>
-        <div class="row g-4" id="secLegs"></div>
-      </div>
-
-      <!-- Arms -->
-      <div class="exercise-section">
-        <h4 class="fw-bold mb-3">腕 (Arms)</h4>
-        <div class="row g-4" id="secArms"></div>
-      </div>
-
-      <!-- Back -->
-      <div class="exercise-section">
-        <h4 class="fw-bold mb-3">背中 (Back)</h4>
-        <div class="row g-4" id="secBack"></div>
-      </div>
-
-      <button id="generateBtn" class="btn btn-success mt-2">💡 メニュー生成 & 保存</button>
-      <span id="saveStatus" class="ms-3 text-success d-none">✔️ 保存しました</span>
+    <!-- DAY CATEGORY SELECT -->
+    <div id="dayCatCard" class="card mb-4">
+      <div class="card-header">1️⃣ 今週の各曜日カテゴリを選択 <small class="text-muted ms-2">(今日の行に⭐自動強調)</small></div>
+      <div class="card-body" id="daySelect"></div>
     </div>
-  </div>
 
-  <!-- PLAN OUTPUT -->
-  <div id="planArea" class="card d-none">
-    <div class="card-header">3️⃣ 生成された 1 週間メニュー</div>
-    <div class="card-body" id="planDisplay"></div>
+    <!-- PREVIOUS SETS INPUT -->
+    <div id="liftCard" class="card mb-4">
+      <div class="card-header">2️⃣ 本日の実績を入力 <small class="text-muted ms-2">(他の日も後で入力可)</small></div>
+      <div class="card-body">
+
+        <!-- Chest -->
+        <div class="exercise-section" id="secWrapChest">
+          <h4 class="fw-bold mb-3">胸 (Chest)</h4>
+          <div class="row g-4" id="secChest"></div>
+        </div>
+
+        <!-- Legs -->
+        <div class="exercise-section" id="secWrapLegs">
+          <h4 class="fw-bold mb-3">足 (Legs)</h4>
+          <div class="row g-4" id="secLegs"></div>
+        </div>
+
+        <!-- Arms -->
+        <div class="exercise-section" id="secWrapArms">
+          <h4 class="fw-bold mb-3">腕 (Arms)</h4>
+          <div class="row g-4" id="secArms"></div>
+        </div>
+
+        <!-- Back -->
+        <div class="exercise-section" id="secWrapBack">
+          <h4 class="fw-bold mb-3">背中 (Back)</h4>
+          <div class="row g-4" id="secBack"></div>
+        </div>
+
+        <button id="generateBtn" class="btn btn-success mt-2">💡 メニュー生成 & 保存</button>
+        <span id="saveStatus" class="ms-3 text-success d-none">✔️ 保存しました</span>
+      </div>
+    </div>
+
+    <!-- PLAN OUTPUT -->
+    <div id="planArea" class="card d-none">
+      <div class="card-header">3️⃣ 生成された 1 週間メニュー</div>
+      <div class="card-body" id="planDisplay"></div>
+    </div>
+  </div> <!-- /#pagePlanner -->
+
+  <!-- ================= PAGE : STATS ================= -->
+  <div id="pageStats" class="d-none">
+    <h2 class="mb-3">📈 進捗グラフ <span id="statsCatLabel" class="badge bg-secondary"></span></h2>
+    <div class="card mb-4">
+      <div class="card-body">
+        <canvas id="statsChart" height="280"></canvas>
+      </div>
+      <div class="card-footer d-flex justify-content-between">
+        <button class="btn btn-outline-secondary btn-sm" id="prevCatBtn">◀ Previous</button>
+        <button class="btn btn-outline-secondary btn-sm" id="nextCatBtn">Next ▶</button>
+      </div>
+    </div>
+    <button class="btn btn-primary" id="backToPlanner">← プランへ戻る</button>
   </div>
 </div>
 
 <script>
 // ==== Configuration ====
-const DAYS = [
-  {id:'Mon', jp:'月'},
-  {id:'Tue', jp:'火'},
-  {id:'Wed', jp:'水'},
-  {id:'Thu', jp:'木'},
-  {id:'Fri', jp:'金'},
-  {id:'Sat', jp:'土'},
-  {id:'Sun', jp:'日'}
-];
-
-const CATEGORY_EXERCISES = {
-  chest: [
-    {prefix:'bench', name:'ベンチプレス'},
-    {prefix:'db',    name:'ダンベルプレス'},
-    {prefix:'fly',   name:'ペックフライ'}
-  ],
-  legs: [
-    {prefix:'sq',  name:'スクワット'},
-    {prefix:'lc',  name:'レッグカール'},
-    {prefix:'le',  name:'レッグエクステンション'},
-    {prefix:'lp',  name:'レッグプレス'}
-  ],
-  arms: [
-    {prefix:'ez',  name:'EZバーカール'},
-    {prefix:'inc', name:'インクラインカール'},
-    {prefix:'lie', name:'ライイングエクステンション'},
-    {prefix:'pd',  name:'プレスダウン'}
-  ],
-  back: [
-    {prefix:'chin', name:'チンニング'},
-    {prefix:'dl',   name:'デッドリフト'},
-    {prefix:'bor',  name:'ベントオーバーロー'},
-    {prefix:'dbr',  name:'ダンベルロー'}
-  ]
+const DAYS=[{id:'Mon',jp:'月',num:1},{id:'Tue',jp:'火',num:2},{id:'Wed',jp:'水',num:3},{id:'Thu',jp:'木',num:4},{id:'Fri',jp:'金',num:5},{id:'Sat',jp:'土',num:6},{id:'Sun',jp:'日',num:0}];
+const CATEGORY_EXERCISES={
+ chest:[{prefix:'bench',name:'ベンチプレス'},{prefix:'db',name:'ダンベルプレス'},{prefix:'fly',name:'ペックフライ'}],
+ legs:[{prefix:'sq',name:'スクワット'},{prefix:'lc',name:'レッグカール'},{prefix:'le',name:'レッグエクステンション'},{prefix:'lp',name:'レッグプレス'}],
+ arms:[{prefix:'ez',name:'EZバーカール'},{prefix:'inc',name:'インクラインカール'},{prefix:'lie',name:'ライイングエクステンション'},{prefix:'pd',name:'プレスダウン'}],
+ back:[{prefix:'chin',name:'チンニング'},{prefix:'dl',name:'デッドリフト'},{prefix:'bor',name:'ベントオーバーロー'},{prefix:'dbr',name:'ダンベルロー'}]
 };
-
-const STORAGE_KEY = 'wkPlannerDataV1';
+const STORAGE_KEY_PLAN='wkPlannerDataV1';
+const STORAGE_KEY_HIST='wkPlannerHistoryV1';
+const CATS=['chest','arms','legs','back'];
+let chartInstance=null; // Chart.js instance
 
 // ==== Build UI ====
-function buildTable(containerId, prefix, title) {
-  const container = document.getElementById(containerId);
-  const col = document.createElement('div');
-  col.className = 'col-md-4';
-  col.innerHTML = `<h5 class='fw-bold text-center'>${title}</h5>
+function buildTable(containerId,prefix,title){
+  const container=document.getElementById(containerId);
+  const col=document.createElement('div');
+  col.className='col-md-4';
+  col.innerHTML=`<h5 class='fw-bold text-center'>${title}</h5>
     <table class='table table-sm'>
       <thead><tr><th>重量 kg</th><th>回数</th></tr></thead>
       <tbody>
-        ${Array.from({length:5}).map((_,i)=>
-          `<tr><td><input id='${prefix}W${i+1}' type='number' class='form-control' step='0.5' min='0'></td>
-               <td><input id='${prefix}R${i+1}' type='number' class='form-control' step='1' min='1'></td></tr>`).join('')}
+        ${Array.from({length:5}).map((_,i)=>`<tr><td><input id='${prefix}W${i+1}' type='number' class='form-control' step='0.5' min='0'></td><td><input id='${prefix}R${i+1}' type='number' class='form-control' step='1' min='1'></td></tr>`).join('')}
       </tbody>
     </table>`;
   container.appendChild(col);
 }
 
-// Build day selectors
 (function buildDaySelectors(){
-  const daySelect = document.getElementById('daySelect');
+  const daySelect=document.getElementById('daySelect');
+  const todayNum=new Date().getDay();
   DAYS.forEach(d=>{
-    const row = document.createElement('div');
-    row.className = 'd-flex align-items-center mb-2';
-    row.innerHTML = `<span class='me-2' style='width:2rem;'>${d.jp}</span>
-      <select id='sel${d.id}' class='form-select form-select-sm' style='max-width:160px;'>
-        <option value='off'>オフ</option>
-        <option value='chest'>胸</option>
-        <option value='legs'>足</option>
-        <option value='arms'>腕</option>
-        <option value='back'>背中</option>
-      </select>`;
+    const row=document.createElement('div');
+    row.className='d-flex align-items-center mb-2';
+    if(d.num===todayNum) row.innerHTML=`<span class='me-2 today-row'>⭐${d.jp}</span>`; else row.innerHTML=`<span class='me-2' style='width:2rem;'>${d.jp}</span>`;
+    const sel=document.createElement('select');
+    sel.id='sel'+d.id;
+    sel.className='form-select form-select-sm';
+    sel.style.maxWidth='160px';
+    sel.innerHTML=`<option value='off'>オフ</option><option value='chest'>胸</option><option value='legs'>足</option><option value='arms'>腕</option><option value='back'>背中</option>`;
+    row.appendChild(sel);
     daySelect.appendChild(row);
   });
 })();
 
-// Build exercise input tables
 (function buildAllTables(){
-  Object.entries(CATEGORY_EXERCISES).forEach(([cat, arr])=>{
-    const containerId = { chest:'secChest', legs:'secLegs', arms:'secArms', back:'secBack' }[cat];
-    arr.forEach(ex=> buildTable(containerId, ex.prefix, ex.name));
+  Object.entries(CATEGORY_EXERCISES).forEach(([cat,arr])=>{
+    const containerId={chest:'secChest',legs:'secLegs',arms:'secArms',back:'secBack'}[cat];
+    arr.forEach(ex=>buildTable(containerId,ex.prefix,ex.name));
   });
 })();
 
 // ==== Utilities ====
-const round05 = v => Math.round(v * 2) / 2; // 0.5kg 刻み
-const estimate1RM = (w, r) => w * (1 + r / 30); // Epley 公式
-
+const round05=v=>Math.round(v*2)/2;
+const estimate1RM=(w,r)=>w*(1+r/30);
 function collectSets(prefix){
-  const arr = [];
+  const arr=[];
   for(let i=1;i<=5;i++){
-    const w = parseFloat(document.getElementById(prefix+'W'+i).value);
-    const r = parseInt(document.getElementById(prefix+'R'+i).value);
-    if(!isNaN(w) && !isNaN(r)) arr.push({w,r});
+    const w=parseFloat(document.getElementById(prefix+'W'+i).value);
+    const r=parseInt(document.getElementById(prefix+'R'+i).value);
+    if(!isNaN(w)&&!isNaN(r)) arr.push({w,r});
   }
   return arr;
 }
-
 function collectTemplates(){
-  const templates = {};
+  const templates={};
   Object.entries(CATEGORY_EXERCISES).forEach(([cat,exArr])=>{
     exArr.forEach(ex=>{
-      const s = collectSets(ex.prefix);
+      const s=collectSets(ex.prefix);
       if(s.length){
         if(!templates[cat]) templates[cat] = {};
-        templates[cat][ex.name] = s; // store with Japanese name
+        templates[cat][ex.name]=s;
       }
     });
   });
   return templates;
 }
-
-function collectDayCategories(){
-  return DAYS.map(d=> document.getElementById('sel'+d.id).value);
-}
+function collectDayCategories(){return DAYS.map(d=>document.getElementById('sel'+d.id).value);} // arr len 7
 
 // ==== Local Storage Handling ====
-function saveData(){
-  const data = { dayCats: collectDayCategories(), sets:{} };
-  // Save sets
-  Object.values(CATEGORY_EXERCISES).flat().forEach(ex=>{
-    const s = collectSets(ex.prefix);
-    if(s.length) data.sets[ex.prefix] = s;
-  });
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  document.getElementById('saveStatus').classList.remove('d-none');
-  setTimeout(()=>document.getElementById('saveStatus').classList.add('d-none'),2000);
-}
+function savePlan(data){localStorage.setItem(STORAGE_KEY_PLAN,JSON.stringify(data));}
+function loadPlan(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY_PLAN)||'null')}catch{return null}}
+function saveHistory(hist){localStorage.setItem(STORAGE_KEY_HIST,JSON.stringify(hist));}
+function loadHistory(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY_HIST)||'{}')}catch{return {}}}
 
-function loadData(){
-  const str = localStorage.getItem(STORAGE_KEY);
-  if(!str) return;
-  try{
-    const data = JSON.parse(str);
-    // Restore day categories
-    if(Array.isArray(data.dayCats)){
-      data.dayCats.forEach((cat, idx)=>{
-        const sel = document.getElementById('sel'+DAYS[idx].id);
-        if(sel) sel.value = cat || 'off';
-      });
-    }
-    // Restore sets
-    if(data.sets && typeof data.sets==='object'){
-      Object.entries(data.sets).forEach(([prefix, arr])=>{
-        arr.forEach((o,i)=>{
-          if(i>=5) return;
-          const wInput = document.getElementById(prefix+'W'+(i+1));
-          const rInput = document.getElementById(prefix+'R'+(i+1));
-          if(wInput && rInput){
-            wInput.value = o.w;
-            rInput.value = o.r;
-          }
-        });
-      });
-    }
-  }catch(e){ console.warn('Load failed',e); }
+function saveDataUI(){document.getElementById('saveStatus').classList.remove('d-none');setTimeout(()=>document.getElementById('saveStatus').classList.add('d-none'),2000);}
+
+// ==== History Helpers ====
+function calcSessionRM(exercises){ // avg of all sets
+  let rms=[];
+  Object.values(exercises).forEach(sets=>sets.forEach(s=>rms.push(estimate1RM(s.w,s.r))));
+  if(!rms.length) return null;
+  return rms.reduce((a,b)=>a+b)/rms.length;
 }
+function pushHistory(cat,rm){if(rm===null) return;const hist=loadHistory();if(!hist[cat]) hist[cat]=[];hist[cat].push({date:new Date().toISOString().slice(0,10),rm:Math.round(rm)});saveHistory(hist);} // store rounded RM
 
 // ==== Generator ====
 function generatePlan(){
-  const templates = collectTemplates();
-  const dayCats = collectDayCategories();
-  const progCount = {chest:0, legs:0, arms:0, back:0};
-  const plan = {};
+  const templates=collectTemplates();
+  const dayCats=collectDayCategories();
+  const progCount={chest:0,legs:0,arms:0,back:0};
+  const plan={};
+  const todayIdx=new Date().getDay(); // 0=Sun
 
-  dayCats.forEach((cat, idx)=>{
-    const dayLabel = `${DAYS[idx].jp}`;
-    if(cat==='off') return; // rest day
-    if(!templates[cat]) return; // no template data
+  dayCats.forEach((cat,idx)=>{
+    const dayLabel=`${DAYS[idx].jp}`;
+    if(cat==='off'||!templates[cat]) return;
 
-    const exercises = templates[cat];
-    const out = {};
-    Object.entries(exercises).forEach(([exName, sets])=>{
-      const modSets = sets.map(s=>{
-        const estRM = estimate1RM(s.w,s.r);
-        const newRM = estRM + 2.5 * progCount[cat];
-        const newW = round05(newRM / (1 + s.r/30));
+    const exercises=templates[cat];
+    const out={};
+    Object.entries(exercises).forEach(([exName,sets])=>{
+      const modSets=sets.map(s=>{
+        const estRM=estimate1RM(s.w,s.r);
+        const newRM=estRM+2.5*progCount[cat];
+        const newW=round05(newRM/(1+s.r/30));
         return `${newW}kg x ${s.r}`;
       });
-      out[exName] = modSets;
+      out[exName]=modSets;
     });
-    plan[`Day ${idx+1} (${dayLabel})`] = out;
+    plan[`Day ${idx+1} (${dayLabel})`]=out;
     progCount[cat]++;
+
+    // ==== history push if today ====
+    if(idx===((todayIdx+6)%7)){ // adjust Sunday=0 to last
+      const rmAvg=calcSessionRM(exercises);
+      pushHistory(cat,rmAvg);
+    }
   });
 
-  if(Object.keys(plan).length===0){
-    alert('入力不足です。カテゴリと実績を確認してください');
-    return;
-  }
+  if(!Object.keys(plan).length){alert('入力不足です。カテゴリと実績を確認してください');return;}
 
   renderPlan(plan);
   document.getElementById('planArea').classList.remove('d-none');
-  saveData(); // 保存
+
+  // ---- Save plan data ----
+  const data={dayCats,sets:{}};
+  Object.values(CATEGORY_EXERCISES).flat().forEach(ex=>{const s=collectSets(ex.prefix);if(s.length) data.sets[ex.prefix]=s;});
+  savePlan(data);
+  saveDataUI();
 }
 
 // ==== Renderer ====
 function renderPlan(obj){
-  const area = document.getElementById('planDisplay');
+  const area=document.getElementById('planDisplay');
   area.innerHTML='';
   Object.keys(obj).forEach(day=>{
-    const card=document.createElement('div');
-    card.className='card mb-3';
+    const card=document.createElement('div');card.className='card mb-3';
     card.innerHTML=`<div class='card-header fw-bold'>${day}</div>`;
-    const list=document.createElement('ul');
-    list.className='list-group list-group-flush';
+    const list=document.createElement('ul');list.className='list-group list-group-flush';
     for(const ex in obj[day]){
-      const li=document.createElement('li');
-      li.className='list-group-item';
-      li.innerHTML=`<strong>${ex}</strong>: ${obj[day][ex].join(', ')}`;
-      list.appendChild(li);
+      const li=document.createElement('li');li.className='list-group-item';li.innerHTML=`<strong>${ex}</strong>: ${obj[day][ex].join(', ')}`;list.appendChild(li);
     }
-    card.appendChild(list);
-    area.appendChild(card);
+    card.appendChild(list);area.appendChild(card);
   });
 }
 
-// ==== Events ====
-document.getElementById('generateBtn').addEventListener('click', generatePlan);
+// ==== Stats Page ====
+let currentCatIdx=0;
+function showStats(cat){
+  const hist=loadHistory()[cat]||[];
+  const ctx=document.getElementById('statsChart').getContext('2d');
+  const labels=hist.map(o=>o.date);
+  const dataVals=hist.map(o=>o.rm);
+  document.getElementById('statsCatLabel').innerText=({chest:'胸',arms:'腕',legs:'足',back:'背中'}[cat]);
+  if(chartInstance){chartInstance.destroy();}
+  chartInstance=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'平均1RM',data:dataVals}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false}}}});
+}
+function switchPage(toStats){
+  document.getElementById('pagePlanner').classList.toggle('d-none',toStats);
+  document.getElementById('pageStats').classList.toggle('d-none',!toStats);
+  document.getElementById('linkPlanner').classList.toggle('active',!toStats);
+  document.getElementById('linkStats').classList.toggle('active',toStats);
+  if(toStats) showStats(CATS[currentCatIdx]);
+}
 
-// ==== Init ====
-loadData(); // ページ読み込み時に過去データを復元
+// ==== Events ====
+document.getElementById('generateBtn').addEventListener('click',generatePlan);
+
+document.getElementById('linkPlanner').addEventListener('click',e=>{e.preventDefault();switchPage(false);});
+document.getElementById('linkStats').addEventListener('click',e=>{e.preventDefault();switchPage(true);});
+
+document.getElementById('backToPlanner').addEventListener('click',()=>switchPage(false));
+
+document.getElementById('prevCatBtn').addEventListener('click',()=>{currentCatIdx=(currentCatIdx+3)%4;showStats(CATS[currentCatIdx]);});
+document.getElementById('nextCatBtn').addEventListener('click',()=>{currentCatIdx=(currentCatIdx+1)%4;showStats(CATS[currentCatIdx]);});
+
+// ==== Init (load previous data) ====
+(function init(){
+  const data=loadPlan();
+  if(data){
+    // restore day cats
+    data.dayCats?.forEach((cat,idx)=>{const sel=document.getElementById('sel'+DAYS[idx].id);if(sel) sel.value=cat;});
+    // restore sets
+    Object.entries(data.sets||{}).forEach(([prefix,arr])=>{
+      arr.forEach((o,i)=>{if(i>=5) return;const wI=document.getElementById(prefix+'W'+(i+1));const rI=document.getElementById(prefix+'R'+(i+1));if(wI&&rI){wI.value=o.w;rI.value=o.r;}});
+    });
+  }
+})();
 </script>
 </body>
 </html>
